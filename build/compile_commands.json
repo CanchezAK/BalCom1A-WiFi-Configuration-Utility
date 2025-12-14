@@ -1,0 +1,68 @@
+[
+{
+  "directory": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/build",
+  "command": "C:\\msys64\\mingw64\\bin\\gcc.exe  @CMakeFiles/GTK_Test.dir/includes_C.rsp -g -std=gnu11 -Wall -Wextra -Wpedantic -DLIBDEFLATE_DLL -mfpmath=sse -msse -msse2 -o CMakeFiles\\GTK_Test.dir\\main.c.obj -c C:\\Users\\StageLAB\\Documents\\Projects\\C\\GTK_Test\\main.c",
+  "file": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/main.c",
+  "output": "CMakeFiles/GTK_Test.dir/main.c.obj"
+},
+{
+  "directory": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/build",
+  "command": "C:\\msys64\\mingw64\\bin\\gcc.exe  @CMakeFiles/GTK_Test.dir/includes_C.rsp -g -std=gnu11 -Wall -Wextra -Wpedantic -DLIBDEFLATE_DLL -mfpmath=sse -msse -msse2 -o CMakeFiles\\GTK_Test.dir\\app\\app_state.c.obj -c C:\\Users\\StageLAB\\Documents\\Projects\\C\\GTK_Test\\app\\app_state.c",
+  "file": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/app/app_state.c",
+  "output": "CMakeFiles/GTK_Test.dir/app/app_state.c.obj"
+},
+{
+  "directory": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/build",
+  "command": "C:\\msys64\\mingw64\\bin\\gcc.exe  @CMakeFiles/GTK_Test.dir/includes_C.rsp -g -std=gnu11 -Wall -Wextra -Wpedantic -DLIBDEFLATE_DLL -mfpmath=sse -msse -msse2 -o CMakeFiles\\GTK_Test.dir\\util\\util.c.obj -c C:\\Users\\StageLAB\\Documents\\Projects\\C\\GTK_Test\\util\\util.c",
+  "file": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/util/util.c",
+  "output": "CMakeFiles/GTK_Test.dir/util/util.c.obj"
+},
+{
+  "directory": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/build",
+  "command": "C:\\msys64\\mingw64\\bin\\gcc.exe  @CMakeFiles/GTK_Test.dir/includes_C.rsp -g -std=gnu11 -Wall -Wextra -Wpedantic -DLIBDEFLATE_DLL -mfpmath=sse -msse -msse2 -o CMakeFiles\\GTK_Test.dir\\ui\\ui.c.obj -c C:\\Users\\StageLAB\\Documents\\Projects\\C\\GTK_Test\\ui\\ui.c",
+  "file": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/ui/ui.c",
+  "output": "CMakeFiles/GTK_Test.dir/ui/ui.c.obj"
+},
+{
+  "directory": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/build",
+  "command": "C:\\msys64\\mingw64\\bin\\gcc.exe  @CMakeFiles/GTK_Test.dir/includes_C.rsp -g -std=gnu11 -Wall -Wextra -Wpedantic -DLIBDEFLATE_DLL -mfpmath=sse -msse -msse2 -o CMakeFiles\\GTK_Test.dir\\ui\\ui_handlers.c.obj -c C:\\Users\\StageLAB\\Documents\\Projects\\C\\GTK_Test\\ui\\ui_handlers.c",
+  "file": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/ui/ui_handlers.c",
+  "output": "CMakeFiles/GTK_Test.dir/ui/ui_handlers.c.obj"
+},
+{
+  "directory": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/build",
+  "command": "C:\\msys64\\mingw64\\bin\\gcc.exe  @CMakeFiles/GTK_Test.dir/includes_C.rsp -g -std=gnu11 -Wall -Wextra -Wpedantic -DLIBDEFLATE_DLL -mfpmath=sse -msse -msse2 -o CMakeFiles\\GTK_Test.dir\\device\\device_protocol.c.obj -c C:\\Users\\StageLAB\\Documents\\Projects\\C\\GTK_Test\\device\\device_protocol.c",
+  "file": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/device/device_protocol.c",
+  "output": "CMakeFiles/GTK_Test.dir/device/device_protocol.c.obj"
+},
+{
+  "directory": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/build",
+  "command": "C:\\msys64\\mingw64\\bin\\gcc.exe  @CMakeFiles/GTK_Test.dir/includes_C.rsp -g -std=gnu11 -Wall -Wextra -Wpedantic -DLIBDEFLATE_DLL -mfpmath=sse -msse -msse2 -o CMakeFiles\\GTK_Test.dir\\device\\device_status.c.obj -c C:\\Users\\StageLAB\\Documents\\Projects\\C\\GTK_Test\\device\\device_status.c",
+  "file": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/device/device_status.c",
+  "output": "CMakeFiles/GTK_Test.dir/device/device_status.c.obj"
+},
+{
+  "directory": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/build",
+  "command": "C:\\msys64\\mingw64\\bin\\gcc.exe  @CMakeFiles/GTK_Test.dir/includes_C.rsp -g -std=gnu11 -Wall -Wextra -Wpedantic -DLIBDEFLATE_DLL -mfpmath=sse -msse -msse2 -o CMakeFiles\\GTK_Test.dir\\loopback\\loopback.c.obj -c C:\\Users\\StageLAB\\Documents\\Projects\\C\\GTK_Test\\loopback\\loopback.c",
+  "file": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/loopback/loopback.c",
+  "output": "CMakeFiles/GTK_Test.dir/loopback/loopback.c.obj"
+},
+{
+  "directory": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/build",
+  "command": "C:\\msys64\\mingw64\\bin\\gcc.exe  @CMakeFiles/GTK_Test.dir/includes_C.rsp -g -std=gnu11 -Wall -Wextra -Wpedantic -DLIBDEFLATE_DLL -mfpmath=sse -msse -msse2 -o CMakeFiles\\GTK_Test.dir\\serial\\serial_win32.c.obj -c C:\\Users\\StageLAB\\Documents\\Projects\\C\\GTK_Test\\serial\\serial_win32.c",
+  "file": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/serial/serial_win32.c",
+  "output": "CMakeFiles/GTK_Test.dir/serial/serial_win32.c.obj"
+},
+{
+  "directory": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/build",
+  "command": "C:\\msys64\\mingw64\\bin\\gcc.exe  @CMakeFiles/GTK_Test.dir/includes_C.rsp -g -std=gnu11 -Wall -Wextra -Wpedantic -DLIBDEFLATE_DLL -mfpmath=sse -msse -msse2 -o CMakeFiles\\GTK_Test.dir\\platform\\platform_win32.c.obj -c C:\\Users\\StageLAB\\Documents\\Projects\\C\\GTK_Test\\platform\\platform_win32.c",
+  "file": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/platform/platform_win32.c",
+  "output": "CMakeFiles/GTK_Test.dir/platform/platform_win32.c.obj"
+},
+{
+  "directory": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/build",
+  "command": "C:\\msys64\\mingw64\\bin\\gcc.exe  @CMakeFiles/GTK_Test.dir/includes_C.rsp -g -std=gnu11 -Wall -Wextra -Wpedantic -DLIBDEFLATE_DLL -mfpmath=sse -msse -msse2 -o CMakeFiles\\GTK_Test.dir\\device\\device_discovery_win32.c.obj -c C:\\Users\\StageLAB\\Documents\\Projects\\C\\GTK_Test\\device\\device_discovery_win32.c",
+  "file": "C:/Users/StageLAB/Documents/Projects/C/GTK_Test/device/device_discovery_win32.c",
+  "output": "CMakeFiles/GTK_Test.dir/device/device_discovery_win32.c.obj"
+}
+]

@@ -1,0 +1,4 @@
+C:/Users/StageLAB/Documents/Projects/C/GTK_Test/build/CMakeFiles/GTK_Test.dir
+C:/Users/StageLAB/Documents/Projects/C/GTK_Test/build/CMakeFiles/run.dir
+C:/Users/StageLAB/Documents/Projects/C/GTK_Test/build/CMakeFiles/edit_cache.dir
+C:/Users/StageLAB/Documents/Projects/C/GTK_Test/build/CMakeFiles/rebuild_cache.dir

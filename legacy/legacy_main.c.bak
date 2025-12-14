@@ -1,0 +1,36 @@
+#include <gtk/gtk.h>
+
+static void on_activate(GtkApplication *app, gpointer user_data) {
+  GtkWidget *win = gtk_application_window_new(app);
+  gtk_window_set_title(GTK_WINDOW(win), "GTK4 from Windows CMake");
+  gtk_window_set_default_size(GTK_WINDOW(win), 500, 200);
+
+  GtkWidget *label = gtk_label_new("It works!");
+  gtk_window_set_child(GTK_WINDOW(win), label);
+
+  GtkWidget *button = gtk_button_new();
+  gtk_button_set_label("Button");
+  
+  gtk_window_set_child(GTK_WINDOW(win), button);
+
+
+  gtk_window_present(GTK_WINDOW(win));
+}
+
+#include <glib.h>
+
+static void gtk_force_renderer_from_env_or_default(void) {
+  /* Если пользователь сам задал GSK_RENDERER — не трогаем */
+  if (g_getenv("GSK_RENDERER") == NULL) {
+    g_setenv("GSK_RENDERER", "cairo", TRUE);
+  }
+}
+
+int main(int argc, char **argv) {
+  gtk_force_renderer_from_env_or_default();
+  GtkApplication *app = gtk_application_new("local.gtk4.cmake", G_APPLICATION_DEFAULT_FLAGS);
+  g_signal_connect(app, "activate", G_CALLBACK(on_activate), NULL);
+  int status = g_application_run(G_APPLICATION(app), argc, argv);
+  g_object_unref(app);
+  return status;
+}
