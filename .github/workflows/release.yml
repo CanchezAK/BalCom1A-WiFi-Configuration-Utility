@@ -24,6 +24,7 @@ jobs:
         with:
           msystem: MINGW64
           update: true
+          path-type: inherit
           install: >-
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-cmake
@@ -38,14 +39,27 @@ jobs:
           choco install nsis -y
           & "C:\Program Files (x86)\NSIS\makensis.exe" /VERSION
 
-      - name: Configure (installer preset)
-        shell: pwsh
+      - name: Toolchain sanity check
+        shell: msys2 {0}
         run: |
+          set -euo pipefail
+          echo "MSYSTEM=$MSYSTEM"
+          which cmake
+          cmake --version
+          which pkg-config
+          pkg-config --version
+          pkg-config --modversion gtk4
+
+      - name: Configure (installer preset)
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
           cmake --preset win-release-installer
 
       - name: Build installer
-        shell: pwsh
+        shell: msys2 {0}
         run: |
+          set -euo pipefail
           cmake --build --preset win-installer
 
       - name: Locate installer
@@ -54,6 +68,9 @@ jobs:
           Get-ChildItem -File "build/win-release-installer" -Filter "BalCom1A Configuration Utility-*.exe" |
             Select-Object Name, Length, LastWriteTime |
             Format-Table -AutoSize
+          if (-not (Get-ChildItem -File "build/win-release-installer" -Filter "BalCom1A Configuration Utility-*.exe")) {
+            throw "Installer not found under build/win-release-installer"
+          }
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
