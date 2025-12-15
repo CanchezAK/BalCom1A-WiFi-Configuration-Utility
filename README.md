@@ -34,6 +34,8 @@ CMake автоматически копирует `ui/glade.ui` в папку б
 Также поддерживается «portable» режим: если `known_networks.ini` лежит рядом с `.exe`, он будет использован для загрузки.
 Для совместимости со старыми сборками при загрузке также проверяется legacy-путь `.../GTK_Test/known_networks.ini`.
 
+Примечание: сохранение выполняется в новый путь `.../BalCom1A_Configuration_Utility/known_networks.ini`.
+
 ## Запуск
 
 ### Обычный режим
@@ -122,6 +124,77 @@ cmake --build --preset win-release
 
 ```powershell
 cmake --build build/win-release --target run
+```
+
+### Windows: сборка установщика (.exe) через CPack + NSIS
+
+1) Установите NSIS (нужен `makensis` в `PATH`).
+
+Команда через winget:
+
+```powershell
+winget install --id NSIS.NSIS -e
+```
+
+Проверка:
+
+```powershell
+makensis /VERSION
+```
+
+2) Убедитесь, что MSYS2 MinGW64 установлен (используется для сборки и для bundling GTK runtime в installer).
+
+3) Соберите проект (Release):
+
+```powershell
+cmake --preset win-release
+cmake --build --preset win-release
+```
+
+4) Сгенерируйте installer из папки сборки:
+
+```powershell
+cd build\win-release
+cpack -G NSIS
+```
+
+Альтернатива: через CMake таргет "Make Installer":
+
+```powershell
+cmake --build build\win-release --target make_installer
+```
+
+Ещё удобнее — через preset:
+
+```powershell
+cmake --build --preset win-installer
+```
+
+Таргет можно отключить опцией конфигурации:
+
+```powershell
+cmake --preset win-release -DBALCOM_ENABLE_INSTALLER=OFF
+```
+
+Результат: `.exe` установщик появится в папке сборки выбранного пресета (например `build/win-release` или `build/win-release-installer`).
+
+Имя установщика включает версию и суффикс сборки (git hash/dirty или дату), чтобы различать разные сборки.
+
+Подсказка по версионированию:
+
+- Если есть git tag вида `vX.Y.Z` или `X.Y.Z`, он будет использован как версия установщика.
+- Иначе будет использована базовая версия проекта и суффикс `git describe` / дата.
+
+Примечания:
+
+- Installer по умолчанию **бандлит GTK/GLib runtime** внутрь себя (DLL + runtime data), чтобы приложение запускалось на «чистой» Windows.
+- В установщике есть опции ярлыков (по умолчанию включены обе):
+  - ярлык в Start Menu (страница выбора папки Start Menu)
+  - ярлык на Desktop (галочка «Create Desktop Icon»)
+- Если MSYS2 установлен не в `C:\msys64`, укажите префикс при конфигурации:
+
+```powershell
+cmake --preset win-release -DMSYS2_MINGW64_PREFIX="D:/msys64/mingw64"
 ```
 
 ---

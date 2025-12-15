@@ -35,6 +35,16 @@
     },
 
     {
+      "name": "win-release-installer",
+      "displayName": "Windows (MSYS2/MinGW) - Release (Installer)",
+      "inherits": "win-release",
+      "cacheVariables": {
+        "BALCOM_ENABLE_INSTALLER": "ON",
+        "BALCOM_BUNDLE_GTK_RUNTIME": "ON"
+      }
+    },
+
+    {
       "name": "wsl-debug",
       "displayName": "WSL (Ubuntu) - Debug",
       "inherits": "base",
@@ -61,6 +71,14 @@
     {
       "name": "win-release",
       "configurePreset": "win-release"
+    },
+    {
+      "name": "win-installer",
+      "displayName": "Windows (MSYS2/MinGW) - Make Installer (NSIS)",
+      "configurePreset": "win-release-installer",
+      "targets": [
+        "make_installer"
+      ]
     },
     {
       "name": "wsl-debug",

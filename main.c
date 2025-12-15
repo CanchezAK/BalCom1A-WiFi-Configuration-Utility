@@ -29,6 +29,30 @@ int main(int argc, char **argv) {
   /* Force cairo renderer (avoid GPU/backends issues). Must be set before GTK init. */
   g_setenv("GSK_RENDERER", "cairo", TRUE);
 
+#if defined(_WIN32)
+  /* When shipped as a portable/installed folder (bundled GTK runtime), point GTK/GLib to our local data files. */
+  {
+    gchar *schemas_dir = platform_build_path_next_to_exe("share/glib-2.0/schemas");
+    if (schemas_dir && g_file_test(schemas_dir, G_FILE_TEST_IS_DIR)) {
+      g_setenv("GSETTINGS_SCHEMA_DIR", schemas_dir, TRUE);
+    }
+    g_free(schemas_dir);
+
+    /* gdk-pixbuf uses loaders.cache to locate image loaders (PNG/JPEG/SVG, etc.). */
+    gchar *pixbuf_cache = platform_build_path_next_to_exe("lib/gdk-pixbuf-2.0/2.10.0/loaders.cache");
+    if (pixbuf_cache && g_file_test(pixbuf_cache, G_FILE_TEST_EXISTS)) {
+      g_setenv("GDK_PIXBUF_MODULE_FILE", pixbuf_cache, TRUE);
+    }
+    g_free(pixbuf_cache);
+
+    gchar *pixbuf_moddir = platform_build_path_next_to_exe("lib/gdk-pixbuf-2.0/2.10.0/loaders");
+    if (pixbuf_moddir && g_file_test(pixbuf_moddir, G_FILE_TEST_IS_DIR)) {
+      g_setenv("GDK_PIXBUF_MODULEDIR", pixbuf_moddir, TRUE);
+    }
+    g_free(pixbuf_moddir);
+  }
+#endif
+
   g_app_state = &st;
 
   st.keep_running_without_device = FALSE;

@@ -1,1 +1,44 @@
+## Build outputs
 build/
+cmake-build-*/
+out/
+
+## CMake generated files (in case someone builds in-source)
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CPackConfig.cmake
+CPackSourceConfig.cmake
+CPackProperties.cmake
+CTestTestfile.cmake
+Makefile
+install_manifest.txt
+compile_commands.json
+
+## CPack / installers staging
+_CPack_Packages/
+
+## Logs
+*.log
+cpack-verbose.log
+
+## Editor/OS noise
+.vscode/*
+!.vscode/settings.json
+.vs/
+*.user
+*.suo
+*.VC.db
+Thumbs.db
+Desktop.ini
+
+## Windows build artifacts
+*.obj
+*.o
+*.a
+*.lib
+*.dll
+*.dll.a
+*.exe
+*.pdb
+*.ilk

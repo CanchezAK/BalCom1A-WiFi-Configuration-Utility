@@ -1,0 +1,63 @@
+name: Release (Windows NSIS Installer)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up MSYS2 (MinGW64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-gtk4
+            mingw-w64-x86_64-glib2
+
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          choco install nsis -y
+          & "C:\Program Files (x86)\NSIS\makensis.exe" /VERSION
+
+      - name: Configure (installer preset)
+        shell: pwsh
+        run: |
+          cmake --preset win-release-installer
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          cmake --build --preset win-installer
+
+      - name: Locate installer
+        shell: pwsh
+        run: |
+          Get-ChildItem -File "build/win-release-installer" -Filter "BalCom1A Configuration Utility-*.exe" |
+            Select-Object Name, Length, LastWriteTime |
+            Format-Table -AutoSize
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/win-release-installer/BalCom1A Configuration Utility-*.exe
+          generate_release_notes: true
