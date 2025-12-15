@@ -1,5 +1,6 @@
 #include <gtk/gtk.h>
 
+#include "app/app_known_networks.h"
 #include "app/app_state.h"
 #include "device/device_protocol.h"
 #include "device/device_status.h"
@@ -19,12 +20,12 @@ static const char *get_selected_ssid(AppState *st) {
   return NULL;
 }
 
-static gboolean ssid_requires_password(const char *ssid) {
-  if (!ssid) {
+static gboolean ssid_requires_password(AppState *st, const char *ssid) {
+  if (!st || !ssid) {
     return FALSE;
   }
-  if (g_app_state && g_app_state->ssidSecurity) {
-    gpointer v = g_hash_table_lookup(g_app_state->ssidSecurity, ssid);
+  if (st->ssidSecurity) {
+    gpointer v = g_hash_table_lookup(st->ssidSecurity, ssid);
     if (v != NULL) {
       return GPOINTER_TO_INT(v) != 0;
     }
@@ -59,6 +60,9 @@ G_MODULE_EXPORT void on_setAP_clicked(GtkButton *btn, gpointer user_data) {
 
   if (device_mode_active(st)) {
     (void)device_send_command(st, "connect_AP");
+    st->last_connect_was_sta_attempt = FALSE;
+    st->last_connect_pwd_was_saved = FALSE;
+    st->last_connect_should_save_pwd = FALSE;
     device_status_set_connecting_ap(st);
     return;
   }
@@ -88,7 +92,32 @@ G_MODULE_EXPORT void on_buttonConnect_clicked(GtkButton *btn, gpointer user_data
     return;
   }
 
-  if (ssid_requires_password(ssid)) {
+  if (ssid_requires_password(st, ssid)) {
+    /* If we already know a password for this SSID, do not prompt; send immediately. */
+    const char *saved_pwd = app_known_networks_lookup(st, ssid);
+    if (saved_pwd && saved_pwd[0] != '\0') {
+      char cmd[256];
+      g_snprintf(cmd, sizeof(cmd), "connect_sta,%s,%s", ssid, saved_pwd);
+
+      st->last_connect_was_sta_attempt = TRUE;
+      st->last_connect_pwd_was_saved = TRUE;
+      st->last_connect_should_save_pwd = FALSE;
+      g_strlcpy(st->last_connect_ssid, ssid, sizeof(st->last_connect_ssid));
+      g_strlcpy(st->last_connect_pwd, saved_pwd, sizeof(st->last_connect_pwd));
+
+      DBG_LOG(st, "[UI] Using saved password for SSID '%s'\n", ssid);
+
+      if (device_mode_active(st)) {
+        (void)device_send_command(st, cmd);
+        device_status_set_connecting_sta(st);
+      } else if (loopback_mode_active(st)) {
+        gboolean ok = loopback_send_and_check_echo(st, cmd);
+        DBG_LOG(st, "[LOOPBACK] TX '%s' -> %s\n", cmd, ok ? "echo OK" : "echo FAILED");
+        ui_set_status(st, ok ? "Loopback: connect_sta sent" : "Loopback: connect_sta FAILED");
+      }
+      return;
+    }
+
     st->pending_connect_sta = TRUE;
     g_strlcpy(st->pending_ssid, ssid, sizeof(st->pending_ssid));
 
@@ -117,6 +146,7 @@ G_MODULE_EXPORT void on_buttonConnect_clicked(GtkButton *btn, gpointer user_data
     return;
   }
 
+  /* Open network. */
   char cmd[256];
   g_snprintf(cmd, sizeof(cmd), "connect_sta,%s,", ssid);
   if (loopback_mode_active(st)) {
@@ -142,6 +172,12 @@ G_MODULE_EXPORT void on_buttonOK_clicked(GtkButton *btn, gpointer user_data) {
   if (st && st->pending_connect_sta && st->pending_ssid[0]) {
     char cmd[256];
     g_snprintf(cmd, sizeof(cmd), "connect_sta,%s,%s", st->pending_ssid, pwd ? pwd : "");
+
+    st->last_connect_was_sta_attempt = TRUE;
+    st->last_connect_pwd_was_saved = FALSE;
+    st->last_connect_should_save_pwd = (pwd && pwd[0] != '\0') ? TRUE : FALSE;
+    g_strlcpy(st->last_connect_ssid, st->pending_ssid, sizeof(st->last_connect_ssid));
+    g_strlcpy(st->last_connect_pwd, pwd ? pwd : "", sizeof(st->last_connect_pwd));
 
     if (loopback_mode_active(st)) {
       gboolean ok = loopback_send_and_check_echo(st, cmd);

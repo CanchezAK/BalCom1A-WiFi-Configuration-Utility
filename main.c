@@ -7,10 +7,21 @@
 #include <string.h>
 
 #include "app/app_state.h"
+#include "app/app_known_networks.h"
 #include "device/device_discovery.h"
 #include "platform/platform.h"
-#include "serial/serial.h"
+#include "platform/serial.h"
 #include "ui/ui.h"
+
+/* GLib/GIO enum compatibility:
+  - On MSYS2/Windows, G_APPLICATION_FLAGS_NONE is deprecated in favor of G_APPLICATION_DEFAULT_FLAGS.
+  - On Ubuntu/WSL in this project, G_APPLICATION_DEFAULT_FLAGS was not available in headers.
+  Use the most compatible flag per platform. */
+#if defined(_WIN32)
+#define APP_GAPPLICATION_FLAGS G_APPLICATION_DEFAULT_FLAGS
+#else
+#define APP_GAPPLICATION_FLAGS G_APPLICATION_FLAGS_NONE
+#endif
 
 int main(int argc, char **argv) {
   AppState st = {0};
@@ -35,6 +46,9 @@ int main(int argc, char **argv) {
   }
   argv_filtered[argc_filtered] = NULL;
 
+  /* Load persisted known SSID/password pairs (used for auto-fill). */
+  (void)app_known_networks_load(&st);
+
   /* 1) First: search for device (blocking). */
   gboolean found = device_discovery_scan_for_device(&st);
 
@@ -54,7 +68,7 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  GtkApplication *app = gtk_application_new("local.gtk.serial.scan", G_APPLICATION_DEFAULT_FLAGS);
+  GtkApplication *app = gtk_application_new("com.balcom.balcom1a.configuration_utility", APP_GAPPLICATION_FLAGS);
   g_signal_connect(app, "activate", G_CALLBACK(ui_app_activate), &st);
 
   int status = g_application_run(G_APPLICATION(app), argc_filtered, argv_filtered);
@@ -72,6 +86,10 @@ int main(int argc, char **argv) {
   if (st.ssidSecurity) {
     g_hash_table_destroy(st.ssidSecurity);
     st.ssidSecurity = NULL;
+  }
+  if (st.knownPasswords) {
+    g_hash_table_destroy(st.knownPasswords);
+    st.knownPasswords = NULL;
   }
   if (st.builder) {
     g_object_unref(st.builder);

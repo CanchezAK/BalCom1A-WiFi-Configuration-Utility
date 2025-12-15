@@ -1,6 +1,6 @@
 #include "loopback/loopback.h"
 
-#include "serial/serial.h"
+#include "platform/serial.h"
 
 #include <string.h>
 

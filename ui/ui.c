@@ -1,5 +1,7 @@
 #include "ui/ui.h"
 
+#include "ui/ui_handlers.h"
+
 #include "device/device_status.h"
 #include "platform/platform.h"
 
@@ -91,6 +93,24 @@ void ui_app_activate(GtkApplication *app, gpointer user_data) {
 
   st->builder = gtk_builder_new();
   GError *err = NULL;
+
+  /* GTK4 resolves <signal handler="..."> names via the builder scope.
+     On Linux, relying on dlsym() of the main binary may require -rdynamic.
+     Register callbacks explicitly to keep builds portable (WSL/Ubuntu, etc). */
+  {
+    GtkBuilderScope *scope = gtk_builder_cscope_new();
+    GtkBuilderCScope *cscope = GTK_BUILDER_CSCOPE(scope);
+
+    gtk_builder_cscope_add_callback_symbol(cscope, "on_scanNetworks_clicked", G_CALLBACK(on_scanNetworks_clicked));
+    gtk_builder_cscope_add_callback_symbol(cscope, "on_setAP_clicked", G_CALLBACK(on_setAP_clicked));
+    gtk_builder_cscope_add_callback_symbol(cscope, "on_buttonConnect_clicked", G_CALLBACK(on_buttonConnect_clicked));
+    gtk_builder_cscope_add_callback_symbol(cscope, "on_buttonCancel_clicked", G_CALLBACK(on_buttonCancel_clicked));
+    gtk_builder_cscope_add_callback_symbol(cscope, "on_buttonOK_clicked", G_CALLBACK(on_buttonOK_clicked));
+    gtk_builder_cscope_add_callback_symbol(cscope, "on_ssidStruct_selected_changed", G_CALLBACK(on_ssidStruct_selected_changed));
+
+    gtk_builder_set_scope(st->builder, scope);
+    g_object_unref(scope);
+  }
 
   gboolean loaded = FALSE;
 

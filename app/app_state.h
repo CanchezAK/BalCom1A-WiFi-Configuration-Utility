@@ -3,7 +3,7 @@
 #include <gtk/gtk.h>
 #include <stdbool.h>
 
-#include "serial/serial.h"
+#include "platform/serial.h"
 
 typedef struct AppState {
   GtkApplication *app;
@@ -29,6 +29,16 @@ typedef struct AppState {
 
   gboolean pending_connect_sta;
   char pending_ssid[128];
+
+  /* Known networks remembered by the app (in-memory): SSID -> password. */
+  GHashTable *knownPasswords; /* key: ssid (utf8); value: password (utf8) */
+
+  /* Track last connect_sta attempt for save/evict logic. */
+  gboolean last_connect_was_sta_attempt;
+  gboolean last_connect_pwd_was_saved;
+  gboolean last_connect_should_save_pwd;
+  char last_connect_ssid[128];
+  char last_connect_pwd[128];
 
   gboolean keep_running_without_device; /* --debug */
 

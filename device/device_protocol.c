@@ -1,6 +1,6 @@
 #include "device/device_protocol.h"
 
-#include "serial/serial.h"
+#include "platform/serial.h"
 #include "ui/ui.h"
 #include "util/util.h"
 

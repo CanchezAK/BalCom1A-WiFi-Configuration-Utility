@@ -1,7 +1,8 @@
 #include "device/device_status.h"
 
 #include "device/device_protocol.h"
-#include "serial/serial.h"
+#include "app/app_known_networks.h"
+#include "platform/serial.h"
 #include "ui/ui.h"
 #include "util/util.h"
 
@@ -118,17 +119,41 @@ static void net_set_state(AppState *st, int new_state, const char *ip_or_null) {
       char msg[64];
       g_snprintf(msg, sizeof(msg), "STA mode, IP addr %s", st->last_ip[0] ? st->last_ip : "?");
       ui_set_status(st, msg);
+
+      /* Save password only after a successful STA connection. */
+      if (st->last_connect_was_sta_attempt && st->last_connect_should_save_pwd &&
+          st->last_connect_ssid[0] != '\0' && st->last_connect_pwd[0] != '\0') {
+        app_known_networks_remember(st, st->last_connect_ssid, st->last_connect_pwd);
+        DBG_LOG(st, "[NET] Saved password for SSID '%s'\n", st->last_connect_ssid);
+      }
+      st->last_connect_should_save_pwd = FALSE;
       break;
     }
     case NET_STATE_AP_MODE: {
       char msg[64];
       g_snprintf(msg, sizeof(msg), "AP mode, IP addr %s", st->last_ip[0] ? st->last_ip : "?");
       ui_set_status(st, msg);
+
+      /* If we attempted STA with a saved password but ended up in AP mode, assume it failed and forget it. */
+      if (st->last_connect_was_sta_attempt && st->last_connect_pwd_was_saved &&
+          st->last_connect_ssid[0] != '\0') {
+        app_known_networks_forget(st, st->last_connect_ssid);
+        DBG_LOG(st, "[NET] Evicted saved password for SSID '%s' (fallback to AP)\n", st->last_connect_ssid);
+      }
+      st->last_connect_should_save_pwd = FALSE;
       break;
     }
     case NET_STATE_FAILED_RETURN_AP:
       ui_set_status(st, "connect failed, return to AP mode");
       st->last_get_ip_us = 0;
+
+      /* If we used a saved password and it failed, forget it and the SSID entry. */
+      if (st->last_connect_was_sta_attempt && st->last_connect_pwd_was_saved &&
+          st->last_connect_ssid[0] != '\0') {
+        app_known_networks_forget(st, st->last_connect_ssid);
+        DBG_LOG(st, "[NET] Evicted saved password for SSID '%s' (connect failed)\n", st->last_connect_ssid);
+      }
+      st->last_connect_should_save_pwd = FALSE;
       break;
     case NET_STATE_IDLE:
     default:
