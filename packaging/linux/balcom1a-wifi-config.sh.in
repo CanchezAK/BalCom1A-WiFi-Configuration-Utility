@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+set -eu
+
+# Wrapper to run the installed binary (which contains spaces in its filename).
+exec "@CMAKE_INSTALL_FULL_BINDIR@/BalCom1A Configuration Utility" "$@"

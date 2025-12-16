@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 3,
   "cmakeMinimumRequired": {
     "major": 3,
     "minor": 20,
@@ -61,6 +61,25 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+
+    {
+      "name": "linux-release",
+      "displayName": "Linux - Release",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "linux-release-deb",
+      "displayName": "Linux - Release (DEB)",
+      "inherits": "linux-release",
+      "cacheVariables": {
+        "CMAKE_INSTALL_PREFIX": "/usr",
+        "BALCOM_ENABLE_DEB": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -87,6 +106,18 @@
     {
       "name": "wsl-release",
       "configurePreset": "wsl-release"
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release"
+    },
+    {
+      "name": "linux-deb",
+      "displayName": "Linux - Make DEB (CPack)",
+      "configurePreset": "linux-release-deb",
+      "targets": [
+        "make_deb"
+      ]
     }
   ],
   "testPresets": []

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=BalCom1A WiFi Configuration Utility
+Comment=Configure BalCom1A WiFi settings over serial
+Exec=@BALCOM_DESKTOP_EXEC@
+Icon=@BALCOM_DESKTOP_ICON@
+Terminal=false
+Categories=Utility;Network;
+StartupNotify=true

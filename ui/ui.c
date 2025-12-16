@@ -129,6 +129,20 @@ void ui_app_activate(GtkApplication *app, gpointer user_data) {
     loaded = gtk_builder_add_from_file(st->builder, UI_FILE, &err);
   }
 
+#ifdef BALCOM_UI_DATADIR
+  if (!loaded) {
+    gchar *ui_datadir_path = g_build_filename(BALCOM_UI_DATADIR, UI_FILE, NULL);
+    loaded = gtk_builder_add_from_file(st->builder, ui_datadir_path, &err);
+    if (!loaded) {
+      if (st->keep_running_without_device) {
+        g_printerr("Failed to load UI from '%s': %s\n", ui_datadir_path, err ? err->message : "unknown error");
+      }
+      g_clear_error(&err);
+    }
+    g_free(ui_datadir_path);
+  }
+#endif
+
   if (!loaded) {
     if (st->keep_running_without_device) {
       gchar *cwd = g_get_current_dir();

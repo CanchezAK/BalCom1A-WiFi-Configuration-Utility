@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(BalCom1A_Configuration_Utility VERSION 0.1.0 LANGUAGES C)
 
+include(GNUInstallDirs)
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
@@ -128,6 +130,16 @@ set_target_properties(BalCom1A_Configuration_Utility_console PROPERTIES OUTPUT_N
 target_link_libraries(BalCom1A_Configuration_Utility PRIVATE PkgConfig::GTK4 platform)
 target_link_libraries(BalCom1A_Configuration_Utility_console PRIVATE PkgConfig::GTK4 platform)
 
+# Linux packaging: allow looking up UI file in the installed data dir.
+if (UNIX AND NOT APPLE)
+  target_compile_definitions(BalCom1A_Configuration_Utility PRIVATE
+    BALCOM_UI_DATADIR="${CMAKE_INSTALL_FULL_DATADIR}/balcom1a-configuration-utility"
+  )
+  target_compile_definitions(BalCom1A_Configuration_Utility_console PRIVATE
+    BALCOM_UI_DATADIR="${CMAKE_INSTALL_FULL_DATADIR}/balcom1a-configuration-utility"
+  )
+endif()
+
 target_include_directories(BalCom1A_Configuration_Utility PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -177,20 +189,80 @@ endif()
 # Install + packaging (CPack)
 # -----------------------------
 
-install(TARGETS BalCom1A_Configuration_Utility
-  RUNTIME DESTINATION .
-)
+# -----------------------------
+# Linux desktop integration (.desktop + icon)
+# -----------------------------
+if (UNIX AND NOT APPLE)
+  # Install icon (we have .ico; desktop files support absolute icon paths).
+  set(BALCOM_LINUX_ICON_BASENAME "balcom1a-configuration-utility")
+  set(BALCOM_LINUX_ICON_INSTALL_NAME "${BALCOM_LINUX_ICON_BASENAME}.ico")
+  set(BALCOM_LINUX_ICON_ABS "${CMAKE_INSTALL_FULL_DATAROOTDIR}/pixmaps/${BALCOM_LINUX_ICON_INSTALL_NAME}")
 
-# Optional console variant (installed too; useful for field debugging).
-install(TARGETS BalCom1A_Configuration_Utility_console
-  RUNTIME DESTINATION .
-)
+  # Install a wrapper command without spaces so .desktop Exec is robust.
+  set(BALCOM_LINUX_WRAPPER_NAME "balcom1a-wifi-config")
+  set(_balcom_wrapper_in "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/balcom1a-wifi-config.sh.in")
+  set(_balcom_wrapper_out "${CMAKE_CURRENT_BINARY_DIR}/${BALCOM_LINUX_WRAPPER_NAME}")
+  configure_file("${_balcom_wrapper_in}" "${_balcom_wrapper_out}" @ONLY)
 
-# UI definition must be next to the executable at runtime.
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/ui/glade.ui
-  DESTINATION .
-  RENAME glade.ui
-)
+  # Configure desktop entry.
+  set(BALCOM_DESKTOP_EXEC "${BALCOM_LINUX_WRAPPER_NAME}")
+  set(BALCOM_DESKTOP_ICON "${BALCOM_LINUX_ICON_ABS}")
+  set(_balcom_desktop_in "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/balcom1a-wifi-configuration-utility.desktop.in")
+  set(_balcom_desktop_out "${CMAKE_CURRENT_BINARY_DIR}/balcom1a-wifi-configuration-utility.desktop")
+  configure_file("${_balcom_desktop_in}" "${_balcom_desktop_out}" @ONLY)
+endif()
+
+if (WIN32)
+  install(TARGETS BalCom1A_Configuration_Utility
+    RUNTIME DESTINATION .
+  )
+
+  # Optional console variant (installed too; useful for field debugging).
+  install(TARGETS BalCom1A_Configuration_Utility_console
+    RUNTIME DESTINATION .
+  )
+
+  # UI definition must be next to the executable at runtime.
+  install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/ui/glade.ui
+    DESTINATION .
+    RENAME glade.ui
+  )
+else()
+  # Linux/Unix: use standard filesystem layout.
+  install(TARGETS BalCom1A_Configuration_Utility
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  )
+
+  install(TARGETS BalCom1A_Configuration_Utility_console
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  )
+
+  # Install UI file to a data dir; the app will look it up via BALCOM_UI_DATADIR.
+  install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/ui/glade.ui
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/balcom1a-configuration-utility
+    RENAME glade.ui
+  )
+
+  # Desktop integration
+  if (EXISTS "${BALCOM_APP_ICON_ICO}")
+    install(FILES "${BALCOM_APP_ICON_ICO}"
+      DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/pixmaps
+      RENAME "${BALCOM_LINUX_ICON_INSTALL_NAME}"
+    )
+  endif()
+
+  if (EXISTS "${_balcom_desktop_out}")
+    install(FILES "${_balcom_desktop_out}"
+      DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications
+    )
+  endif()
+
+  if (EXISTS "${_balcom_wrapper_out}")
+    install(PROGRAMS "${_balcom_wrapper_out}"
+      DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+  endif()
+endif()
 
 # On Windows, also install the .ico file so shortcuts can explicitly reference it
 # (more reliable than depending on Explorer icon cache of the .exe).
@@ -323,6 +395,29 @@ FunctionEnd
       DEPENDS BalCom1A_Configuration_Utility BalCom1A_Configuration_Utility_console
       WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
       COMMENT "Make Installer (CPack + NSIS)"
+      VERBATIM
+    )
+  endif()
+endif()
+
+if (UNIX AND NOT APPLE)
+  # Debian package
+  set(CPACK_GENERATOR "DEB")
+  # Debian policy: /usr, not /usr/local
+  set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
+  set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
+  set(CPACK_DEBIAN_PACKAGE_NAME "balcom1a-wifi-configuration-utility")
+  set(CPACK_DEBIAN_PACKAGE_MAINTAINER "BalCom")
+  # Let dpkg-shlibdeps compute dependencies from linked libs (recommended).
+  set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+
+  option(BALCOM_ENABLE_DEB "Enable DEB package target (make_deb)" ON)
+  if (BALCOM_ENABLE_DEB)
+    add_custom_target(make_deb
+      COMMAND ${CMAKE_CPACK_COMMAND} -G DEB --config "${CMAKE_CURRENT_BINARY_DIR}/CPackConfig.cmake"
+      DEPENDS BalCom1A_Configuration_Utility BalCom1A_Configuration_Utility_console
+      WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+      COMMENT "Make DEB package (CPack + DEB)"
       VERBATIM
     )
   endif()

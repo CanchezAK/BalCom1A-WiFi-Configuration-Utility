@@ -203,6 +203,27 @@ cmake --preset win-release -DMSYS2_MINGW64_PREFIX="D:/msys64/mingw64"
 
 1) Установите зависимости (см. раздел «Зависимости»).
 
+### Linux: сборка .deb пакета
+
+Требуется: `cmake`, `ninja`, `pkg-config`, `libgtk-4-dev`, `fakeroot`, `dpkg-dev`.
+
+Сборка DEB через CPack (рекомендуется):
+
+```bash
+cmake --preset linux-release-deb
+cmake --build --preset linux-deb
+```
+
+Результат: файл `.deb` появится в `build/linux-release-deb`.
+
+После установки пакет добавляет пункт в меню приложений (через `.desktop`) и устанавливает иконку.
+
+Запуск из терминала:
+
+```bash
+balcom1a-wifi-config
+```
+
 2) Конфигурация и сборка:
 
 ```bash
