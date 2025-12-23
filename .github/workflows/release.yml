@@ -12,12 +12,19 @@ permissions:
 jobs:
   build-windows-installer:
     runs-on: windows-latest
+    env:
+      BALCOM_FLASH_TOOL_DOWNLOAD_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/esptool.exe
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
       - name: Set up MSYS2 (MinGW64)
         uses: msys2/setup-msys2@v2
@@ -39,6 +46,28 @@ jobs:
           choco install nsis -y
           & "C:\Program Files (x86)\NSIS\makensis.exe" /VERSION
 
+      - name: Build standalone esptool (PyInstaller)
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install esptool pyinstaller
+
+          New-Item -ItemType Directory -Force -Path build\esptool-asset | Out-Null
+
+          python -m PyInstaller packaging\flasher\esptool_wrapper.py `
+            --onefile `
+            --name esptool `
+            --distpath build\esptool-asset `
+            --workpath build\esptool-asset\_pyi_build `
+            --specpath build\esptool-asset\_pyi_spec
+
+          if (-not (Test-Path build\esptool-asset\esptool.exe)) {
+            throw "Expected build/esptool-asset/esptool.exe to be created"
+          }
+
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath build\esptool-asset\esptool.exe).Hash.ToLower()
+          "BALCOM_FLASH_TOOL_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Toolchain sanity check
         shell: msys2 {0}
         run: |
@@ -54,7 +83,10 @@ jobs:
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          cmake --preset win-release-installer
+          cmake --preset win-release-installer \
+            -DBALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL=ON \
+            -DBALCOM_FLASH_TOOL_DOWNLOAD_URL="$BALCOM_FLASH_TOOL_DOWNLOAD_URL" \
+            -DBALCOM_FLASH_TOOL_SHA256="$BALCOM_FLASH_TOOL_SHA256"
 
       - name: Build installer
         shell: msys2 {0}
@@ -77,10 +109,11 @@ jobs:
         with:
           files: |
             build/win-release-installer/BalCom1A Configuration Utility-*.exe
+            build/esptool-asset/esptool.exe
           generate_release_notes: true
 
   build-linux-deb:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: build-windows-installer
 
     steps:
@@ -88,6 +121,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
       - name: Install build dependencies
         run: |
@@ -97,13 +135,29 @@ jobs:
             libgtk-4-dev \
             fakeroot dpkg-dev
 
+      - name: Build standalone esptool (PyInstaller)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install esptool pyinstaller
+
+          mkdir -p build/flasher
+
+          python -m PyInstaller packaging/flasher/esptool_wrapper.py \
+            --onefile \
+            --name esptool \
+            --distpath build/flasher \
+            --workpath build/flasher/_pyi_build \
+            --specpath build/flasher/_pyi_spec
+
+          test -f build/flasher/esptool
+
       - name: Configure (DEB preset)
         run: |
-          cmake --preset linux-release-deb
+          cmake --preset linux-release-deb-ci
 
       - name: Build DEB
         run: |
-          cmake --build --preset linux-deb
+          cmake --build --preset linux-deb-ci
 
       - name: Locate DEB
         run: |

@@ -40,7 +40,19 @@
       "inherits": "win-release",
       "cacheVariables": {
         "BALCOM_ENABLE_INSTALLER": "ON",
-        "BALCOM_BUNDLE_GTK_RUNTIME": "ON"
+        "BALCOM_BUNDLE_GTK_RUNTIME": "ON",
+        "BALCOM_BUNDLE_FLASH_TOOL": "OFF",
+        "BALCOM_FLASH_TOOL_EXECUTABLE": ""
+      }
+    },
+
+    {
+      "name": "win-release-installer-ci",
+      "hidden": true,
+      "inherits": "win-release-installer",
+      "cacheVariables": {
+        "BALCOM_BUNDLE_FLASH_TOOL": "ON",
+        "BALCOM_FLASH_TOOL_EXECUTABLE": "${sourceDir}/build/flasher/esptool.exe"
       }
     },
 
@@ -78,7 +90,19 @@
       "inherits": "linux-release",
       "cacheVariables": {
         "CMAKE_INSTALL_PREFIX": "/usr",
-        "BALCOM_ENABLE_DEB": "ON"
+        "BALCOM_ENABLE_DEB": "ON",
+        "BALCOM_BUNDLE_FLASH_TOOL": "OFF",
+        "BALCOM_FLASH_TOOL_EXECUTABLE": ""
+      }
+    },
+
+    {
+      "name": "linux-release-deb-ci",
+      "hidden": true,
+      "inherits": "linux-release-deb",
+      "cacheVariables": {
+        "BALCOM_BUNDLE_FLASH_TOOL": "ON",
+        "BALCOM_FLASH_TOOL_EXECUTABLE": "${sourceDir}/build/flasher/esptool"
       }
     }
   ],
@@ -99,6 +123,16 @@
         "make_installer"
       ]
     },
+
+    {
+      "name": "win-installer-ci",
+      "hidden": true,
+      "displayName": "Windows (CI) - Make Installer (NSIS)",
+      "configurePreset": "win-release-installer-ci",
+      "targets": [
+        "make_installer"
+      ]
+    },
     {
       "name": "wsl-debug",
       "configurePreset": "wsl-debug"
@@ -115,6 +149,16 @@
       "name": "linux-deb",
       "displayName": "Linux - Make DEB (CPack)",
       "configurePreset": "linux-release-deb",
+      "targets": [
+        "make_deb"
+      ]
+    }
+    ,
+    {
+      "name": "linux-deb-ci",
+      "hidden": true,
+      "displayName": "Linux (CI) - Make DEB (CPack)",
+      "configurePreset": "linux-release-deb-ci",
       "targets": [
         "make_deb"
       ]

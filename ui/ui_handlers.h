@@ -11,3 +11,6 @@ G_MODULE_EXPORT void on_buttonConnect_clicked(GtkButton *btn, gpointer user_data
 G_MODULE_EXPORT void on_buttonOK_clicked(GtkButton *btn, gpointer user_data);
 G_MODULE_EXPORT void on_buttonCancel_clicked(GtkButton *btn, gpointer user_data);
 G_MODULE_EXPORT void on_ssidStruct_selected_changed(GObject *obj, GParamSpec *pspec, gpointer user_data);
+
+G_MODULE_EXPORT void on_firmwareUpgrade_clicked(GtkButton *btn, gpointer user_data);
+G_MODULE_EXPORT void on_firmware_upgrade_ok_clicked(GtkButton *btn, gpointer user_data);

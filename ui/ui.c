@@ -5,6 +5,8 @@
 #include "device/device_status.h"
 #include "platform/platform.h"
 
+static gboolean on_firmware_upgrade_close_request(GtkWindow *win, gpointer user_data);
+
 static gboolean on_pwd_dialog_close_request(GtkWindow *win, gpointer user_data);
 static gboolean on_main_window_close_request(GtkWindow *win, gpointer user_data);
 static void on_window_destroy(GtkWidget *w, gpointer user_data);
@@ -47,6 +49,11 @@ static gboolean on_main_window_close_request(GtkWindow *win, gpointer user_data)
       st->pwdDialog = NULL;
     }
 
+    if (st->firmwareUpgradeWindow) {
+      gtk_window_destroy(st->firmwareUpgradeWindow);
+      st->firmwareUpgradeWindow = NULL;
+    }
+
     device_status_monitor_stop(st);
 
     if (st->device) {
@@ -69,6 +76,11 @@ static void on_window_destroy(GtkWidget *w, gpointer user_data) {
   if (st->pwdDialog) {
     gtk_window_destroy(st->pwdDialog);
     st->pwdDialog = NULL;
+  }
+
+  if (st->firmwareUpgradeWindow) {
+    gtk_window_destroy(st->firmwareUpgradeWindow);
+    st->firmwareUpgradeWindow = NULL;
   }
 
   device_status_monitor_stop(st);
@@ -107,6 +119,8 @@ void ui_app_activate(GtkApplication *app, gpointer user_data) {
     gtk_builder_cscope_add_callback_symbol(cscope, "on_buttonCancel_clicked", G_CALLBACK(on_buttonCancel_clicked));
     gtk_builder_cscope_add_callback_symbol(cscope, "on_buttonOK_clicked", G_CALLBACK(on_buttonOK_clicked));
     gtk_builder_cscope_add_callback_symbol(cscope, "on_ssidStruct_selected_changed", G_CALLBACK(on_ssidStruct_selected_changed));
+    gtk_builder_cscope_add_callback_symbol(cscope, "on_firmwareUpgrade_clicked", G_CALLBACK(on_firmwareUpgrade_clicked));
+    gtk_builder_cscope_add_callback_symbol(cscope, "on_firmware_upgrade_ok_clicked", G_CALLBACK(on_firmware_upgrade_ok_clicked));
 
     gtk_builder_set_scope(st->builder, scope);
     g_object_unref(scope);
@@ -167,6 +181,11 @@ void ui_app_activate(GtkApplication *app, gpointer user_data) {
   st->ssidStruct = GTK_DROP_DOWN(gtk_builder_get_object(st->builder, "ssidStruct"));
   st->monitor0   = GTK_LABEL(gtk_builder_get_object(st->builder, "monitor0"));
 
+  st->firmwareUpgradeWindow = GTK_WINDOW(gtk_builder_get_object(st->builder, "firmwareUpgradeWindow"));
+  st->firmwareUpgradeLabel = GTK_LABEL(gtk_builder_get_object(st->builder, "firmwareUpgradeLabel"));
+  st->firmwareUpgradeProgress = GTK_PROGRESS_BAR(gtk_builder_get_object(st->builder, "firmwareUpgradeProgress"));
+  st->firmwareUpgradeOk = GTK_BUTTON(gtk_builder_get_object(st->builder, "firmwareUpgradeOk"));
+
   if (!st->window1 || !st->pwdDialog || !st->ssidStruct || !st->textBox0) {
     if (st->keep_running_without_device) {
       g_printerr("UI missing required objects (window1/pwdDialog/ssidStruct/textBox0)\n");
@@ -183,6 +202,14 @@ void ui_app_activate(GtkApplication *app, gpointer user_data) {
 
   if (st->pwdDialog) {
     g_signal_connect(st->pwdDialog, "close-request", G_CALLBACK(on_pwd_dialog_close_request), st);
+  }
+
+  if (st->firmwareUpgradeWindow) {
+    gtk_window_set_application(st->firmwareUpgradeWindow, app);
+    gtk_window_set_transient_for(st->firmwareUpgradeWindow, st->window1);
+    gtk_window_set_modal(st->firmwareUpgradeWindow, TRUE);
+    g_signal_connect(st->firmwareUpgradeWindow, "close-request", G_CALLBACK(on_firmware_upgrade_close_request), st);
+    gtk_widget_set_visible(GTK_WIDGET(st->firmwareUpgradeWindow), FALSE);
   }
 
   if (st->pwdDialog) {
@@ -224,4 +251,18 @@ void ui_app_activate(GtkApplication *app, gpointer user_data) {
   }
 
   gtk_window_present(st->window1);
+}
+
+static gboolean on_firmware_upgrade_close_request(GtkWindow *win, gpointer user_data) {
+  AppState *st = resolve_state(user_data);
+  if (st && st->firmware_upgrade_running) {
+    /* Prevent closing while an upgrade is in progress. */
+    return TRUE;
+  }
+
+  gtk_widget_set_visible(GTK_WIDGET(win), FALSE);
+  if (st && st->window1) {
+    gtk_window_present(st->window1);
+  }
+  return TRUE;
 }

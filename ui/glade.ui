@@ -54,6 +54,13 @@
               </object>
             </child>
 
+            <child>
+              <object class="GtkButton" id="firmwareUpgrade">
+                <property name="label" translatable="yes">Firmware Upgrade</property>
+                <signal name="clicked" handler="on_firmwareUpgrade_clicked" swapped="no"/>
+              </object>
+            </child>
+
           </object>
         </child>
 
@@ -114,6 +121,61 @@
                 <property name="label" translatable="yes">OK</property>
                 <property name="receives-default">True</property>
                 <signal name="clicked" handler="on_buttonOK_clicked" swapped="no"/>
+              </object>
+            </child>
+
+          </object>
+        </child>
+
+      </object>
+    </property>
+  </object>
+
+  <!-- Firmware upgrade progress window -->
+  <object class="GtkWindow" id="firmwareUpgradeWindow">
+    <property name="title" translatable="yes">Firmware Upgrade</property>
+    <property name="modal">True</property>
+    <property name="transient-for">window1</property>
+    <property name="resizable">False</property>
+    <property name="default-width">520</property>
+
+    <property name="child">
+      <object class="GtkBox" id="firmwareUpgradeBox">
+        <property name="orientation">vertical</property>
+        <property name="spacing">12</property>
+        <property name="margin-start">12</property>
+        <property name="margin-end">12</property>
+        <property name="margin-top">12</property>
+        <property name="margin-bottom">12</property>
+
+        <child>
+          <object class="GtkLabel" id="firmwareUpgradeLabel">
+            <property name="hexpand">True</property>
+            <property name="halign">start</property>
+            <property name="wrap">True</property>
+            <property name="label" translatable="yes">Select a firmware file to start.</property>
+          </object>
+        </child>
+
+        <child>
+          <object class="GtkProgressBar" id="firmwareUpgradeProgress">
+            <property name="hexpand">True</property>
+            <property name="show-text">True</property>
+            <property name="fraction">0</property>
+          </object>
+        </child>
+
+        <child>
+          <object class="GtkBox" id="firmwareUpgradeButtons">
+            <property name="orientation">horizontal</property>
+            <property name="spacing">8</property>
+            <property name="halign">end</property>
+
+            <child>
+              <object class="GtkButton" id="firmwareUpgradeOk">
+                <property name="label" translatable="yes">OK</property>
+                <property name="sensitive">False</property>
+                <signal name="clicked" handler="on_firmware_upgrade_ok_clicked" swapped="no"/>
               </object>
             </child>
 

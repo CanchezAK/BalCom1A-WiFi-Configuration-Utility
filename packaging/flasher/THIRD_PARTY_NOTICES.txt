@@ -1,0 +1,10 @@
+Third-party notices
+
+This package may include a flashing tool used for ESP32-S3 firmware upgrades.
+
+If the bundled tool is esptool:
+- Project: esptool
+- Upstream: https://github.com/espressif/esptool
+- License: GPLv2 (see upstream LICENSE)
+
+When redistributing third-party software, ensure you comply with the respective license terms.

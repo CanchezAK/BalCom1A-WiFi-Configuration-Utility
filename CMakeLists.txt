@@ -7,6 +7,22 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # -----------------------------
+# Optional: bundle flashing tool (esptool)
+# -----------------------------
+# End users typically won't have Python/esptool installed.
+# When enabled, we copy an existing flasher executable into the install folder
+# (and next to the built .exe for local runs).
+option(BALCOM_BUNDLE_FLASH_TOOL "Bundle a flashing tool (esptool) with the app" OFF)
+set(BALCOM_FLASH_TOOL_EXECUTABLE "" CACHE FILEPATH "Path to flasher executable to bundle (recommended: standalone esptool/espflash binary)")
+set(BALCOM_FLASH_TOOL_NOTICES "${CMAKE_CURRENT_SOURCE_DIR}/packaging/flasher/THIRD_PARTY_NOTICES.txt" CACHE FILEPATH "Optional third-party notices file to ship with the bundled flasher")
+
+# Optional: let the Windows NSIS installer download esptool.exe during installation.
+# This keeps the installer smaller and avoids bundling the flasher inside the .exe.
+option(BALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL "(Windows/NSIS) Download esptool.exe during installation" OFF)
+set(BALCOM_FLASH_TOOL_DOWNLOAD_URL "" CACHE STRING "(Windows/NSIS) URL to download esptool.exe from")
+set(BALCOM_FLASH_TOOL_SHA256 "" CACHE STRING "(Windows/NSIS) Expected SHA256 of downloaded esptool.exe (hex, optional; if empty, skip verification)")
+
+# -----------------------------
 # Application icon (Windows)
 # -----------------------------
 # - Embed icon into the produced .exe (taskbar/start menu/shortcuts will show it)
@@ -89,6 +105,7 @@ add_executable(BalCom1A_Configuration_Utility
   util/util.c
   ui/ui.c
   ui/ui_handlers.c
+  firmware/firmware_upgrade.c
   device/device_discovery.c
   device/device_protocol.c
   device/device_status.c
@@ -115,6 +132,7 @@ add_executable(BalCom1A_Configuration_Utility_console
   util/util.c
   ui/ui.c
   ui/ui_handlers.c
+  firmware/firmware_upgrade.c
   device/device_discovery.c
   device/device_protocol.c
   device/device_status.c
@@ -129,6 +147,35 @@ set_target_properties(BalCom1A_Configuration_Utility_console PROPERTIES OUTPUT_N
 
 target_link_libraries(BalCom1A_Configuration_Utility PRIVATE PkgConfig::GTK4 platform)
 target_link_libraries(BalCom1A_Configuration_Utility_console PRIVATE PkgConfig::GTK4 platform)
+
+if (BALCOM_BUNDLE_FLASH_TOOL)
+  if (BALCOM_FLASH_TOOL_EXECUTABLE STREQUAL "")
+    find_program(BALCOM_FLASH_TOOL_EXECUTABLE NAMES esptool esptool.exe balcom-esptool balcom-esptool.exe)
+  endif()
+
+  if (NOT BALCOM_FLASH_TOOL_EXECUTABLE)
+    message(FATAL_ERROR "BALCOM_BUNDLE_FLASH_TOOL is ON, but BALCOM_FLASH_TOOL_EXECUTABLE was not found. Set -DBALCOM_FLASH_TOOL_EXECUTABLE=... to a flasher executable.")
+  endif()
+
+  if (NOT EXISTS "${BALCOM_FLASH_TOOL_EXECUTABLE}")
+    message(FATAL_ERROR "BALCOM_BUNDLE_FLASH_TOOL is ON, but BALCOM_FLASH_TOOL_EXECUTABLE does not exist: ${BALCOM_FLASH_TOOL_EXECUTABLE}")
+  endif()
+
+  # Copy next to binaries for local runs from build dir.
+  add_custom_command(TARGET BalCom1A_Configuration_Utility POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${BALCOM_FLASH_TOOL_EXECUTABLE}"
+            $<TARGET_FILE_DIR:BalCom1A_Configuration_Utility>/$<IF:$<BOOL:WIN32>,esptool.exe,esptool>
+    COMMENT "Copy flashing tool next to executable"
+  )
+
+  add_custom_command(TARGET BalCom1A_Configuration_Utility_console POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${BALCOM_FLASH_TOOL_EXECUTABLE}"
+            $<TARGET_FILE_DIR:BalCom1A_Configuration_Utility_console>/$<IF:$<BOOL:WIN32>,esptool.exe,esptool>
+    COMMENT "Copy flashing tool next to executable (console target)"
+  )
+endif()
 
 # Linux packaging: allow looking up UI file in the installed data dir.
 if (UNIX AND NOT APPLE)
@@ -227,6 +274,30 @@ if (WIN32)
     DESTINATION .
     RENAME glade.ui
   )
+
+  if (BALCOM_BUNDLE_FLASH_TOOL)
+    install(PROGRAMS "${BALCOM_FLASH_TOOL_EXECUTABLE}"
+      DESTINATION .
+      RENAME esptool.exe
+    )
+
+    if (EXISTS "${BALCOM_FLASH_TOOL_NOTICES}")
+      install(FILES "${BALCOM_FLASH_TOOL_NOTICES}"
+        DESTINATION .
+        RENAME THIRD_PARTY_NOTICES.txt
+      )
+    endif()
+  endif()
+
+  # If the installer will download the flash tool, still ship notices.
+  if (BALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL)
+    if (EXISTS "${BALCOM_FLASH_TOOL_NOTICES}")
+      install(FILES "${BALCOM_FLASH_TOOL_NOTICES}"
+        DESTINATION .
+        RENAME THIRD_PARTY_NOTICES.txt
+      )
+    endif()
+  endif()
 else()
   # Linux/Unix: use standard filesystem layout.
   install(TARGETS BalCom1A_Configuration_Utility
@@ -238,6 +309,19 @@ else()
   )
 
   # Install UI file to a data dir; the app will look it up via BALCOM_UI_DATADIR.
+  if (BALCOM_BUNDLE_FLASH_TOOL)
+    install(PROGRAMS "${BALCOM_FLASH_TOOL_EXECUTABLE}"
+      DESTINATION ${CMAKE_INSTALL_DATADIR}/balcom1a-configuration-utility
+      RENAME esptool
+    )
+
+    if (EXISTS "${BALCOM_FLASH_TOOL_NOTICES}")
+      install(FILES "${BALCOM_FLASH_TOOL_NOTICES}"
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/balcom1a-configuration-utility
+        RENAME THIRD_PARTY_NOTICES.txt
+      )
+    endif()
+  endif()
   install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/ui/glade.ui
     DESTINATION ${CMAKE_INSTALL_DATADIR}/balcom1a-configuration-utility
     RENAME glade.ui
@@ -383,6 +467,50 @@ FunctionEnd
 
   option(BALCOM_ENABLE_INSTALLER "Enable NSIS installer target (make_installer)" ON)
   if (BALCOM_ENABLE_INSTALLER)
+    if (BALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL)
+      if (BALCOM_FLASH_TOOL_DOWNLOAD_URL STREQUAL "")
+        message(FATAL_ERROR "BALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL is ON, but BALCOM_FLASH_TOOL_DOWNLOAD_URL is empty")
+      endif()
+
+      # Download esptool.exe at install time if it isn't already present.
+      # Uses NSISdl (bundled with NSIS). HTTPS is supported via WinINet.
+      string(JOIN "\n" CPACK_NSIS_EXTRA_INSTALL_COMMANDS
+        "        ; --- BalCom: download esptool.exe if missing ---"
+        "        IfFileExists \"$INSTDIR\\esptool.exe\" +8 0"
+        "          DetailPrint \"Downloading esptool.exe ...\""
+        "          NSISdl::download /TIMEOUT=30000 \"${BALCOM_FLASH_TOOL_DOWNLOAD_URL}\" \"$INSTDIR\\esptool.exe\""
+        "          Pop $0"
+        "          StrCmp $0 \"success\" +3 0"
+        "            MessageBox MB_ICONEXCLAMATION \"Failed to download esptool.exe ($0).\\r\\n\\r\\nInstallation will continue, but Firmware Upgrade may not work until you place esptool.exe into:\\r\\n$INSTDIR\""
+        "            Delete \"$INSTDIR\\esptool.exe\""
+      )
+
+      if (NOT BALCOM_FLASH_TOOL_SHA256 STREQUAL "")
+        # Append SHA256 verification. We compute actual hash via PowerShell and compare.
+        # On mismatch, delete esptool.exe and warn; do NOT abort installation.
+        string(APPEND CPACK_NSIS_EXTRA_INSTALL_COMMANDS "\n")
+        string(JOIN "\n" _balcom_sha_verify
+          "        ; --- BalCom: verify SHA256 of downloaded esptool.exe ---"
+          "        IfFileExists \"$INSTDIR\\esptool.exe\" 0 +18"
+          "          DetailPrint \"Verifying esptool.exe SHA256 ...\""
+          "          StrCpy $1 \"$PLUGINSDIR\\balcom_esptool_sha256.txt\""
+          "          Delete $1"
+          "          nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -Command \"$h=(Get-FileHash -Algorithm SHA256 -LiteralPath ''$INSTDIR\\esptool.exe'').Hash.ToLower(); Set-Content -NoNewline -LiteralPath ''$PLUGINSDIR\\balcom_esptool_sha256.txt'' -Value $h\"'"
+          "          IfFileExists \"$PLUGINSDIR\\balcom_esptool_sha256.txt\" 0 +10"
+          "            FileOpen $2 \"$PLUGINSDIR\\balcom_esptool_sha256.txt\" r"
+          "            FileRead $2 $3"
+          "            FileClose $2"
+          "            ; $3 may contain trailing CR/LF; compare only first 64 chars"
+          "            StrCpy $3 $3 64"
+          "            StrCmp $3 \"${BALCOM_FLASH_TOOL_SHA256}\" +4 0"
+          "              MessageBox MB_ICONEXCLAMATION \"Downloaded esptool.exe failed SHA256 verification.\\r\\n\\r\\nInstallation will continue, but Firmware Upgrade may not work.\""
+          "              Delete \"$INSTDIR\\esptool.exe\""
+          "              Delete \"$PLUGINSDIR\\balcom_esptool_sha256.txt\""
+        )
+        string(APPEND CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${_balcom_sha_verify}")
+      endif()
+    endif()
+
     # Older builds produced a legacy filename without the git/date suffix. Remove
     # it so users don't accidentally pick the wrong installer.
     set(BALCOM_LEGACY_INSTALLER_FILE

@@ -18,6 +18,16 @@ typedef struct AppState {
   GListStore  *ssidStore;     /* owned ref; GtkStringObject items */
   GHashTable  *ssidSecurity;  /* key: ssid (utf8); value: GINT_TO_POINTER(0=open,1=pwd) */
 
+  /* Firmware upgrade UI */
+  GtkWindow *firmwareUpgradeWindow;
+  GtkLabel  *firmwareUpgradeLabel;
+  GtkProgressBar *firmwareUpgradeProgress;
+  GtkButton *firmwareUpgradeOk;
+
+  /* Firmware upgrade state */
+  gboolean firmware_upgrade_running;
+  gpointer firmware_upgrade_ctx; /* owned by firmware module */
+
   char device_port[32];
   SerialPort *device;
 

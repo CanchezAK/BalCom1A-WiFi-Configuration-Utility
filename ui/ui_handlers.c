@@ -6,6 +6,9 @@
 #include "device/device_status.h"
 #include "loopback/loopback.h"
 #include "ui/ui.h"
+#include "platform/platform.h"
+
+#include "firmware/firmware_upgrade.h"
 
 #include <string.h>
 
@@ -238,4 +241,186 @@ G_MODULE_EXPORT void on_ssidStruct_selected_changed(GObject *obj, GParamSpec *ps
     }
   }
   g_print("[UI] SSID selected: idx=%u value=%s\n", selected, value ? value : "(none)");
+}
+
+static void fw_set_progress(AppState *st, double fraction, const char *status) {
+  if (!st) {
+    return;
+  }
+
+  if (st->firmwareUpgradeProgress) {
+    gtk_progress_bar_set_fraction(st->firmwareUpgradeProgress, fraction);
+    if (status) {
+      gtk_progress_bar_set_text(st->firmwareUpgradeProgress, status);
+    }
+  }
+  if (st->firmwareUpgradeLabel && status) {
+    gtk_label_set_text(st->firmwareUpgradeLabel, status);
+  }
+}
+
+static void fw_on_progress(gpointer user_data, double fraction_0_1, const char *status_utf8) {
+  AppState *st = resolve_state(user_data);
+  fw_set_progress(st, fraction_0_1, status_utf8);
+}
+
+static void fw_finish(AppState *st, gboolean success, const char *message) {
+  if (!st) {
+    return;
+  }
+
+  st->firmware_upgrade_running = FALSE;
+
+  if (st->firmwareUpgradeOk) {
+    gtk_widget_set_sensitive(GTK_WIDGET(st->firmwareUpgradeOk), TRUE);
+  }
+
+  if (success) {
+    fw_set_progress(st, 1.0, message ? message : "Firmware upgrade completed");
+    ui_set_status(st, "Firmware upgrade completed");
+  } else {
+    fw_set_progress(st, 0.0, message ? message : "Firmware upgrade failed");
+    platform_show_error("Firmware upgrade failed", message ? message : "Firmware upgrade failed");
+    ui_set_status(st, "Firmware upgrade failed");
+  }
+
+  if (st->firmware_upgrade_ctx) {
+    firmware_upgrade_free((FirmwareUpgrade *)st->firmware_upgrade_ctx);
+    st->firmware_upgrade_ctx = NULL;
+  }
+}
+
+static void fw_on_done(gpointer user_data, gboolean success, const char *message_utf8) {
+  AppState *st = resolve_state(user_data);
+  fw_finish(st, success, message_utf8);
+}
+
+static void fw_dialog_open_finish_cb(GObject *source_object, GAsyncResult *res, gpointer user_data) {
+  AppState *st = resolve_state(user_data);
+  GError *err = NULL;
+  GFile *file = gtk_file_dialog_open_finish(GTK_FILE_DIALOG(source_object), res, &err);
+
+  if (!file) {
+    /* User cancelled or error. */
+    if (err && st && st->keep_running_without_device) {
+      g_printerr("Firmware file dialog error: %s\n", err->message);
+    }
+    g_clear_error(&err);
+    return;
+  }
+
+  char *path = g_file_get_path(file);
+  g_object_unref(file);
+
+  if (!st || !path) {
+    g_free(path);
+    return;
+  }
+
+  if (!device_mode_active(st)) {
+    platform_show_error("Device not connected", "Firmware upgrade requires a connected device.");
+    g_free(path);
+    return;
+  }
+
+  if (st->firmwareUpgradeWindow) {
+    if (st->firmwareUpgradeOk) {
+      gtk_widget_set_sensitive(GTK_WIDGET(st->firmwareUpgradeOk), FALSE);
+    }
+    st->firmware_upgrade_running = TRUE;
+    fw_set_progress(st, 0.0, "Preparing firmware upgrade... (device must be in download mode)");
+    gtk_window_present(st->firmwareUpgradeWindow);
+  }
+
+  /* Stop background polling and close our serial handle so esptool can open the port. */
+  device_status_monitor_stop(st);
+  if (st->device) {
+    serial_close(st->device);
+    st->device = NULL;
+  }
+
+  if (!st->device_port[0]) {
+    fw_finish(st, FALSE, "No serial port selected for device.");
+    g_free(path);
+    return;
+  }
+
+  /* Best-effort safety: backup current flash before writing new firmware. */
+  st->firmware_upgrade_ctx = firmware_upgrade_start(st->device_port, path, TRUE, fw_on_progress, fw_on_done, st);
+  if (!st->firmware_upgrade_ctx) {
+    fw_finish(st, FALSE, "Failed to start firmware upgrade.");
+    g_free(path);
+    return;
+  }
+
+  g_free(path);
+}
+
+G_MODULE_EXPORT void on_firmwareUpgrade_clicked(GtkButton *btn, gpointer user_data) {
+  AppState *st = resolve_state(user_data);
+  (void)btn;
+
+  if (!st || !st->window1) {
+    return;
+  }
+
+  if (st->firmware_upgrade_running) {
+    ui_set_status(st, "Firmware upgrade already in progress");
+    return;
+  }
+
+  if (!device_mode_active(st)) {
+    platform_show_error("Device not connected", "Connect the device before starting firmware upgrade.");
+    return;
+  }
+
+  if (!st->firmwareUpgradeWindow || !st->firmwareUpgradeProgress || !st->firmwareUpgradeOk) {
+    platform_show_error("UI error", "Firmware upgrade UI is missing required widgets.");
+    return;
+  }
+
+  GtkFileDialog *dlg = gtk_file_dialog_new();
+  gtk_file_dialog_set_title(dlg, "Select firmware file");
+
+  /* Filters: merged firmware (.bin/.hex) or ESP-IDF flash_args (no extension / .txt). */
+  GListStore *filters = g_list_store_new(GTK_TYPE_FILE_FILTER);
+
+  GtkFileFilter *f1 = gtk_file_filter_new();
+  gtk_file_filter_set_name(f1, "Firmware images (*.bin, *.hex)");
+  gtk_file_filter_add_pattern(f1, "*.bin");
+  gtk_file_filter_add_pattern(f1, "*.hex");
+  g_list_store_append(filters, f1);
+  g_object_unref(f1);
+
+  GtkFileFilter *f2 = gtk_file_filter_new();
+  gtk_file_filter_set_name(f2, "ESP-IDF flash args (flash_args, *.txt, *.args)");
+  gtk_file_filter_add_pattern(f2, "flash_args");
+  gtk_file_filter_add_pattern(f2, "*.txt");
+  gtk_file_filter_add_pattern(f2, "*.args");
+  g_list_store_append(filters, f2);
+  g_object_unref(f2);
+
+  gtk_file_dialog_set_filters(dlg, G_LIST_MODEL(filters));
+  g_object_unref(filters);
+
+  gtk_file_dialog_open(dlg, st->window1, NULL, fw_dialog_open_finish_cb, st);
+  g_object_unref(dlg);
+}
+
+G_MODULE_EXPORT void on_firmware_upgrade_ok_clicked(GtkButton *btn, gpointer user_data) {
+  AppState *st = resolve_state(user_data);
+  (void)btn;
+
+  if (!st || !st->firmwareUpgradeWindow) {
+    return;
+  }
+
+  if (st->firmware_upgrade_running) {
+    return;
+  }
+
+  gtk_widget_set_visible(GTK_WIDGET(st->firmwareUpgradeWindow), FALSE);
+  if (st->window1) {
+    gtk_window_present(st->window1);
+  }
 }
