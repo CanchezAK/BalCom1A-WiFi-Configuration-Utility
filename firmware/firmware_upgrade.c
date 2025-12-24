@@ -21,6 +21,7 @@ struct FirmwareUpgrade {
   GMainContext *main_context;
 
   GRegex *pct_re;
+  GRegex *bytes_re;
 };
 
 typedef struct {
@@ -210,6 +211,7 @@ static gboolean run_esptool_step(FirmwareUpgrade *up,
   char *line = NULL;
   gsize len = 0;
   int last_pct = -1;
+  double last_frac = -1.0; /* 0..1 within this phase */
   GString *log = g_string_new(NULL);
 
   post_progress(up, base, phase);
@@ -225,26 +227,66 @@ static gboolean run_esptool_step(FirmwareUpgrade *up,
       }
     }
 
-    /* Try parse percentage like "(10 %)" or "10%" */
-    if (up->pct_re) {
+    /* Prefer precise byte progress: "<read>/<total> bytes". */
+    gboolean matched_progress = FALSE;
+    if (up->bytes_re) {
+      GMatchInfo *mi = NULL;
+      if (g_regex_match(up->bytes_re, line, 0, &mi)) {
+        gchar *m_read = g_match_info_fetch(mi, 1);
+        gchar *m_total = g_match_info_fetch(mi, 2);
+        if (m_read && m_total) {
+          gdouble read_bytes = g_ascii_strtod(m_read, NULL);
+          gdouble total_bytes = g_ascii_strtod(m_total, NULL);
+          if (total_bytes > 0.0 && read_bytes >= 0.0) {
+            gdouble frac = read_bytes / total_bytes;
+            if (frac < 0.0) frac = 0.0;
+            if (frac > 1.0) frac = 1.0;
+            if (frac < last_frac) {
+              frac = last_frac;
+            }
+            if (frac > last_frac) {
+              last_frac = frac;
+              double f = base + span * frac;
+              char status[256];
+              g_snprintf(status, sizeof(status), "%s: %.1f%%", phase, frac * 100.0);
+              post_progress(up, f, status);
+            }
+            matched_progress = TRUE;
+          }
+        }
+        g_free(m_read);
+        g_free(m_total);
+      }
+      if (mi) {
+        g_match_info_free(mi);
+      }
+    }
+
+    /* Fallback: parse percentage like "(10 %)" or "10%" when byte info
+       is not available on this line. */
+    if (!matched_progress && up->pct_re) {
       GMatchInfo *mi = NULL;
       if (g_regex_match(up->pct_re, line, 0, &mi)) {
         gchar *m = g_match_info_fetch(mi, 1);
         if (m) {
           int pct = atoi(m);
           if (pct >= 0 && pct <= 100) {
-            /* esptool may restart internal progress (0..100) multiple times
-               for a single command; do not allow our UI progress to jump
-               backwards when that happens. */
             if (pct < last_pct) {
               pct = last_pct;
             }
             if (pct != last_pct) {
               last_pct = pct;
-              double f = base + span * ((double)pct / 100.0);
-              char status[256];
-              g_snprintf(status, sizeof(status), "%s: %d%%", phase, pct);
-              post_progress(up, f, status);
+              double frac = (double)pct / 100.0;
+              if (frac < last_frac) {
+                frac = last_frac;
+              }
+              if (frac > last_frac) {
+                last_frac = frac;
+                double f = base + span * frac;
+                char status[256];
+                g_snprintf(status, sizeof(status), "%s: %d%%", phase, pct);
+                post_progress(up, f, status);
+              }
             }
           }
           g_free(m);
@@ -439,6 +481,7 @@ FirmwareUpgrade *firmware_upgrade_start(const char *port_utf8,
   up->user_data = user_data;
   up->main_context = g_main_context_ref_thread_default();
   up->pct_re = g_regex_new("([0-9]{1,3})\\s*%", 0, 0, NULL);
+  up->bytes_re = g_regex_new("([0-9]+)\\s*/\\s*([0-9]+)\\s*bytes", 0, 0, NULL);
 
   up->thread = g_thread_new("firmware-upgrade", firmware_thread_main, up);
   return up;
@@ -457,6 +500,11 @@ void firmware_upgrade_free(FirmwareUpgrade *up) {
   if (up->pct_re) {
     g_regex_unref(up->pct_re);
     up->pct_re = NULL;
+  }
+
+  if (up->bytes_re) {
+    g_regex_unref(up->bytes_re);
+    up->bytes_re = NULL;
   }
 
   if (up->main_context) {
