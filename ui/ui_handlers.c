@@ -295,22 +295,28 @@ static void fw_on_done(gpointer user_data, gboolean success, const char *message
   fw_finish(st, success, message_utf8);
 }
 
-static void fw_dialog_open_finish_cb(GObject *source_object, GAsyncResult *res, gpointer user_data) {
+static void fw_file_chooser_response_cb(GtkNativeDialog *native, gint response, gpointer user_data) {
   AppState *st = resolve_state(user_data);
-  GError *err = NULL;
-  GFile *file = gtk_file_dialog_open_finish(GTK_FILE_DIALOG(source_object), res, &err);
+
+  if (response != GTK_RESPONSE_ACCEPT) {
+    if (st && st->keep_running_without_device) {
+      g_print("Firmware file dialog cancelled or closed.\n");
+    }
+    g_object_unref(native);
+    return;
+  }
+
+  GtkFileChooser *chooser = GTK_FILE_CHOOSER(native);
+  GFile *file = gtk_file_chooser_get_file(chooser);
 
   if (!file) {
-    /* User cancelled or error. */
-    if (err && st && st->keep_running_without_device) {
-      g_printerr("Firmware file dialog error: %s\n", err->message);
-    }
-    g_clear_error(&err);
+    g_object_unref(native);
     return;
   }
 
   char *path = g_file_get_path(file);
   g_object_unref(file);
+  g_object_unref(native);
 
   if (!st || !path) {
     g_free(path);
@@ -339,14 +345,14 @@ static void fw_dialog_open_finish_cb(GObject *source_object, GAsyncResult *res, 
     st->device = NULL;
   }
 
-  if (!st->device_port[0]) {
+  if (!st->device_port_path[0]) {
     fw_finish(st, FALSE, "No serial port selected for device.");
     g_free(path);
     return;
   }
 
   /* Best-effort safety: backup current flash before writing new firmware. */
-  st->firmware_upgrade_ctx = firmware_upgrade_start(st->device_port, path, TRUE, fw_on_progress, fw_on_done, st);
+  st->firmware_upgrade_ctx = firmware_upgrade_start(st->device_port_path, path, TRUE, fw_on_progress, fw_on_done, st);
   if (!st->firmware_upgrade_ctx) {
     fw_finish(st, FALSE, "Failed to start firmware upgrade.");
     g_free(path);
@@ -379,17 +385,21 @@ G_MODULE_EXPORT void on_firmwareUpgrade_clicked(GtkButton *btn, gpointer user_da
     return;
   }
 
-  GtkFileDialog *dlg = gtk_file_dialog_new();
-  gtk_file_dialog_set_title(dlg, "Select firmware file");
+  GtkFileChooserNative *dlg = gtk_file_chooser_native_new(
+      "Select firmware file",
+      st->window1,
+      GTK_FILE_CHOOSER_ACTION_OPEN,
+      "Open",
+      "Cancel");
 
   /* Filters: merged firmware (.bin/.hex) or ESP-IDF flash_args (no extension / .txt). */
-  GListStore *filters = g_list_store_new(GTK_TYPE_FILE_FILTER);
+  GtkFileChooser *chooser = GTK_FILE_CHOOSER(dlg);
 
   GtkFileFilter *f1 = gtk_file_filter_new();
   gtk_file_filter_set_name(f1, "Firmware images (*.bin, *.hex)");
   gtk_file_filter_add_pattern(f1, "*.bin");
   gtk_file_filter_add_pattern(f1, "*.hex");
-  g_list_store_append(filters, f1);
+  gtk_file_chooser_add_filter(chooser, f1);
   g_object_unref(f1);
 
   GtkFileFilter *f2 = gtk_file_filter_new();
@@ -397,14 +407,12 @@ G_MODULE_EXPORT void on_firmwareUpgrade_clicked(GtkButton *btn, gpointer user_da
   gtk_file_filter_add_pattern(f2, "flash_args");
   gtk_file_filter_add_pattern(f2, "*.txt");
   gtk_file_filter_add_pattern(f2, "*.args");
-  g_list_store_append(filters, f2);
+  gtk_file_chooser_add_filter(chooser, f2);
   g_object_unref(f2);
 
-  gtk_file_dialog_set_filters(dlg, G_LIST_MODEL(filters));
-  g_object_unref(filters);
-
-  gtk_file_dialog_open(dlg, st->window1, NULL, fw_dialog_open_finish_cb, st);
-  g_object_unref(dlg);
+  gtk_native_dialog_set_modal(GTK_NATIVE_DIALOG(dlg), TRUE);
+  g_signal_connect(dlg, "response", G_CALLBACK(fw_file_chooser_response_cb), st);
+  gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
 }
 
 G_MODULE_EXPORT void on_firmware_upgrade_ok_clicked(GtkButton *btn, gpointer user_data) {

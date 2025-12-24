@@ -210,14 +210,19 @@ static gboolean run_esptool_step(FirmwareUpgrade *up,
   char *line = NULL;
   gsize len = 0;
   int last_pct = -1;
-  gchar *last_line = NULL;
+  GString *log = g_string_new(NULL);
 
   post_progress(up, base, phase);
 
   while ((line = g_data_input_stream_read_line(dis, &len, NULL, &err)) != NULL) {
     if (len > 0) {
-      g_free(last_line);
-      last_line = g_strdup(line);
+      if (log->len > 0) {
+        g_string_append_c(log, '\n');
+      }
+      /* Guard against unbounded growth; keep last few KB of output. */
+      if (log->len < 4096) {
+        g_string_append(log, line);
+      }
     }
 
     /* Try parse percentage like "(10 %)" or "10%" */
@@ -227,12 +232,20 @@ static gboolean run_esptool_step(FirmwareUpgrade *up,
         gchar *m = g_match_info_fetch(mi, 1);
         if (m) {
           int pct = atoi(m);
-          if (pct >= 0 && pct <= 100 && pct != last_pct) {
-            last_pct = pct;
-            double f = base + span * ((double)pct / 100.0);
-            char status[256];
-            g_snprintf(status, sizeof(status), "%s: %d%%", phase, pct);
-            post_progress(up, f, status);
+          if (pct >= 0 && pct <= 100) {
+            /* esptool may restart internal progress (0..100) multiple times
+               for a single command; do not allow our UI progress to jump
+               backwards when that happens. */
+            if (pct < last_pct) {
+              pct = last_pct;
+            }
+            if (pct != last_pct) {
+              last_pct = pct;
+              double f = base + span * ((double)pct / 100.0);
+              char status[256];
+              g_snprintf(status, sizeof(status), "%s: %d%%", phase, pct);
+              post_progress(up, f, status);
+            }
           }
           g_free(m);
         }
@@ -250,7 +263,7 @@ static gboolean run_esptool_step(FirmwareUpgrade *up,
       *out_err = g_strdup_printf("I/O error while running esptool (%s): %s", phase, err->message);
     }
     g_clear_error(&err);
-    g_free(last_line);
+    g_string_free(log, TRUE);
     g_object_unref(dis);
     g_object_unref(proc);
     return FALSE;
@@ -261,21 +274,24 @@ static gboolean run_esptool_step(FirmwareUpgrade *up,
   gboolean ok = g_subprocess_wait_check(proc, NULL, &err);
   if (!ok) {
     if (out_err) {
-      if (err) {
+      const char *log_str = (log && log->len > 0) ? log->str : NULL;
+      if (log_str && err) {
+        *out_err = g_strdup_printf("esptool failed (%s): %s. Output:\n%s", phase, err->message, log_str);
+      } else if (log_str) {
+        *out_err = g_strdup_printf("esptool failed (%s). Output:\n%s", phase, log_str);
+      } else if (err) {
         *out_err = g_strdup_printf("esptool failed (%s): %s", phase, err->message);
-      } else if (last_line) {
-        *out_err = g_strdup_printf("esptool failed (%s). Last output: %s", phase, last_line);
       } else {
         *out_err = g_strdup_printf("esptool failed (%s)", phase);
       }
     }
     g_clear_error(&err);
-    g_free(last_line);
+    g_string_free(log, TRUE);
     g_object_unref(proc);
     return FALSE;
   }
 
-  g_free(last_line);
+  g_string_free(log, TRUE);
   g_object_unref(proc);
 
   post_progress(up, base + span, phase);
@@ -307,6 +323,10 @@ static gpointer firmware_thread_main(gpointer user_data) {
   /* Base argv: esptool --port PORT --chip esp32s3 */
   /* Use a higher baudrate to speed up flashing when possible. */
   const char *baud = "460800";
+    /* Backup size: read only the first 1MB of flash for backup.
+      This matches typical bootloader+app region and keeps backup time manageable
+      compared to reading ALL of a large flash chip. */
+    const char *backup_size = "1M";
 
   gboolean spec_args = spec_is_args_file(up->spec);
   gboolean spec_bin = path_ends_with_ci(up->spec, ".bin") || path_ends_with_ci(up->spec, ".hex");
@@ -327,7 +347,6 @@ static gpointer firmware_thread_main(gpointer user_data) {
       g_free(esptool);
       return NULL;
     }
-
     post_progress(up, 0.0, "Backup: reading flash (device must be in download mode)");
 
     char *argv_backup[] = {
@@ -340,14 +359,14 @@ static gpointer firmware_thread_main(gpointer user_data) {
       (char *)baud,
       "read-flash",
       "0",
-      "ALL",
+      (char *)backup_size,
       backup_path,
       NULL,
     };
 
     char *step_err = NULL;
     if (!run_esptool_step(up, argv_backup, "Backup", 0.0, 0.25, &step_err)) {
-      /* Backup is desirable but not always possible (Secure Download Mode, access, etc.). */
+      /* Backup is required: abort flashing on failure. */
       char *msg = g_strdup_printf("Backup failed. %s", step_err ? step_err : "");
       g_free(step_err);
       g_free(backup_path);

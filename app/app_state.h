@@ -28,6 +28,13 @@ typedef struct AppState {
   gboolean firmware_upgrade_running;
   gpointer firmware_upgrade_ctx; /* owned by firmware module */
 
+  /*
+   * Serial port identifiers:
+   * - device_port_path: full system path used for opening the port and for esptool
+   *   (e.g. "COM3" on Windows, "/dev/serial/by-id/..." on Linux).
+   * - device_port: short label shown in the UI (may be truncated).
+   */
+  char device_port_path[256];
   char device_port[32];
   SerialPort *device;
 

@@ -124,6 +124,7 @@ gboolean device_discovery_scan_for_device(AppState *st) {
   }
 
   st->device_port[0] = '\0';
+  st->device_port_path[0] = '\0';
   st->device_port_busy = FALSE;
   st->busy_port[0] = '\0';
   st->loopback_available = FALSE;
@@ -164,6 +165,7 @@ gboolean device_discovery_scan_for_device(AppState *st) {
       gboolean loopback = FALSE;
       if (probe_port_for_device(port, &found, &loopback, st->keep_running_without_device)) {
         set_display_port(st->device_port, port);
+        g_strlcpy(st->device_port_path, port, sizeof(st->device_port_path));
         st->device = found;
         DBG_LOG(st, "Device found on %s\n", st->device_port);
         g_ptr_array_free(ports, TRUE);

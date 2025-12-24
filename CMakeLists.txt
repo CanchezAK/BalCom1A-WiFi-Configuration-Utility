@@ -22,6 +22,24 @@ option(BALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL "(Windows/NSIS) Download esptool.exe
 set(BALCOM_FLASH_TOOL_DOWNLOAD_URL "" CACHE STRING "(Windows/NSIS) URL to download esptool.exe from")
 set(BALCOM_FLASH_TOOL_SHA256 "" CACHE STRING "(Windows/NSIS) Expected SHA256 of downloaded esptool.exe (hex, optional; if empty, skip verification)")
 
+# If a prebuilt flasher binary is present in packaging/flasher/, enable bundling
+# by default so that released installers (.exe / .deb) always include the tool
+# without requiring extra CMake flags.
+if (BALCOM_FLASH_TOOL_EXECUTABLE STREQUAL "")
+  if (WIN32)
+    set(_BALCOM_DEFAULT_FLASHER "${CMAKE_CURRENT_SOURCE_DIR}/packaging/flasher/esptool.exe")
+  else()
+    set(_BALCOM_DEFAULT_FLASHER "${CMAKE_CURRENT_SOURCE_DIR}/packaging/flasher/esptool")
+  endif()
+
+  if (EXISTS "${_BALCOM_DEFAULT_FLASHER}")
+    set(BALCOM_FLASH_TOOL_EXECUTABLE "${_BALCOM_DEFAULT_FLASHER}" CACHE FILEPATH "Path to flasher executable to bundle (auto-detected from packaging/flasher)" FORCE)
+    if (NOT BALCOM_BUNDLE_FLASH_TOOL)
+      set(BALCOM_BUNDLE_FLASH_TOOL ON CACHE BOOL "Bundle a flashing tool (esptool) with the app" FORCE)
+    endif()
+  endif()
+endif()
+
 # -----------------------------
 # Application icon (Windows)
 # -----------------------------
