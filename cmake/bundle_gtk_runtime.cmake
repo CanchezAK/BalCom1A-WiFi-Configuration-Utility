@@ -89,12 +89,22 @@ if (NOT EXISTS "${_schemas_dst}/gschemas.compiled")
   message(FATAL_ERROR "Expected gschemas.compiled to be created at ${_schemas_dst}/gschemas.compiled")
 endif()
 
-# Icons (theme). This can be large, but is the most reliable way to avoid missing icons.
-set(_icons_src "${MSYS2_MINGW64_PREFIX}/share/icons")
-if (NOT EXISTS "${_icons_src}")
-  message(FATAL_ERROR "Icons dir not found: ${_icons_src} (is gtk4 runtime data installed in MSYS2?)")
+# Icons (theme).
+# Copy only the themes we actually rely on (Adwaita + hicolor). Copying the
+# entire share/icons tree can produce a very large NSIS installer.
+set(_icons_root "${MSYS2_MINGW64_PREFIX}/share/icons")
+set(_icons_adwaita "${_icons_root}/Adwaita")
+set(_icons_hicolor "${_icons_root}/hicolor")
+
+if (NOT EXISTS "${_icons_adwaita}")
+  message(FATAL_ERROR "Adwaita icon theme not found: ${_icons_adwaita} (install mingw-w64-x86_64-adwaita-icon-theme)")
 endif()
-file(INSTALL DESTINATION "${_dest}/share" TYPE DIRECTORY FILES "${_icons_src}")
+if (NOT EXISTS "${_icons_hicolor}")
+  message(FATAL_ERROR "hicolor icon theme not found: ${_icons_hicolor} (install mingw-w64-x86_64-hicolor-icon-theme)")
+endif()
+
+file(INSTALL DESTINATION "${_dest}/share/icons" TYPE DIRECTORY FILES "${_icons_adwaita}")
+file(INSTALL DESTINATION "${_dest}/share/icons" TYPE DIRECTORY FILES "${_icons_hicolor}")
 
 # GTK data (optional but common).
 set(_gtk_share_src "${MSYS2_MINGW64_PREFIX}/share/gtk-4.0")

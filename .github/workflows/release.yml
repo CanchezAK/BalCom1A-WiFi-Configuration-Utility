@@ -109,9 +109,23 @@ jobs:
 
       - name: Build installer
         shell: msys2 {0}
+        continue-on-error: true
         run: |
           set -euo pipefail
           cmake --build --preset win-installer
+
+      - name: Dump NSIS log on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Write-Host "Listing NSIS logs under build/win-release-installer/_CPack_Packages ..."
+          Get-ChildItem -Path "build/win-release-installer/_CPack_Packages" -Recurse -File -Filter "NSISOutput.log" |
+            ForEach-Object { Write-Host "--- $($_.FullName) ---"; Get-Content $_.FullName -Tail 250 }
+          Write-Host "Listing NSIS scripts under build/win-release-installer/_CPack_Packages ..."
+          Get-ChildItem -Path "build/win-release-installer/_CPack_Packages" -Recurse -File -Filter "project.nsi" |
+            ForEach-Object { Write-Host "--- $($_.FullName) ---"; Get-Content $_.FullName -Tail 80 }
+          exit 1
 
       - name: Verify staged install tree (GTK runtime bundled)
         shell: pwsh
@@ -148,9 +162,13 @@ jobs:
             throw "Missing gdk-pixbuf loaders.cache under $stage\\lib\\gdk-pixbuf-2.0"
           }
 
-          $iconsDir = Join-Path $stage "share/icons"
-          if (-not (Test-Path -LiteralPath $iconsDir)) {
-            throw "Missing icons dir under staged install: $iconsDir"
+          $adwaitaDir = Join-Path $stage "share/icons/Adwaita"
+          $hicolorDir = Join-Path $stage "share/icons/hicolor"
+          if (-not (Test-Path -LiteralPath $adwaitaDir)) {
+            throw "Missing Adwaita icons under staged install: $adwaitaDir"
+          }
+          if (-not (Test-Path -LiteralPath $hicolorDir)) {
+            throw "Missing hicolor icons under staged install: $hicolorDir"
           }
 
       - name: Locate installer
