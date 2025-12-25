@@ -138,16 +138,17 @@ jobs:
             throw "Staged EXE not found under build/win-release-installer/_CPack_Packages"
           }
 
-          $stage = $exe.Directory.FullName
+          # Use DirectoryName to guarantee we have a plain string path.
+          $stage = $exe.DirectoryName
           Write-Host "Staged install dir: $stage"
 
           $requiredFiles = @(
-            Join-Path $stage "BalCom1A Configuration Utility.exe",
-            Join-Path $stage "glade.ui",
-            Join-Path $stage "esptool.exe",
-            Join-Path $stage "libgtk-4-1.dll",
-            Join-Path $stage "libglib-2.0-0.dll",
-            Join-Path $stage "share/glib-2.0/schemas/gschemas.compiled"
+            (Join-Path -Path $stage -ChildPath "BalCom1A Configuration Utility.exe"),
+            (Join-Path -Path $stage -ChildPath "glade.ui"),
+            (Join-Path -Path $stage -ChildPath "esptool.exe"),
+            (Join-Path -Path $stage -ChildPath "libgtk-4-1.dll"),
+            (Join-Path -Path $stage -ChildPath "libglib-2.0-0.dll"),
+            (Join-Path -Path $stage -ChildPath "share/glib-2.0/schemas/gschemas.compiled")
           )
 
           foreach ($p in $requiredFiles) {
@@ -162,8 +163,8 @@ jobs:
             throw "Missing gdk-pixbuf loaders.cache under $stage\\lib\\gdk-pixbuf-2.0"
           }
 
-          $adwaitaDir = Join-Path $stage "share/icons/Adwaita"
-          $hicolorDir = Join-Path $stage "share/icons/hicolor"
+          $adwaitaDir = Join-Path -Path $stage -ChildPath "share/icons/Adwaita"
+          $hicolorDir = Join-Path -Path $stage -ChildPath "share/icons/hicolor"
           if (-not (Test-Path -LiteralPath $adwaitaDir)) {
             throw "Missing Adwaita icons under staged install: $adwaitaDir"
           }
