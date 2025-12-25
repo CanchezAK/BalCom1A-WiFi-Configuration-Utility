@@ -119,6 +119,7 @@ jobs:
           fi
           cmake --preset win-release-installer \
             -DMSYS2_MINGW64_PREFIX="${_runner_tmp_win}/msys64/mingw64" \
+            -DCPACK_TEMPORARY_DIRECTORY="${_runner_tmp_win}/cpack-tmp" \
             -DBALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL=ON \
             -DBALCOM_FLASH_TOOL_DOWNLOAD_URL="$BALCOM_FLASH_TOOL_DOWNLOAD_URL" \
             -DBALCOM_FLASH_TOOL_SHA256="$BALCOM_FLASH_TOOL_SHA256"
@@ -136,12 +137,20 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          Write-Host "Listing NSIS logs under build/win-release-installer/_CPack_Packages ..."
-          Get-ChildItem -Path "build/win-release-installer/_CPack_Packages" -Recurse -File -Filter "NSISOutput.log" |
-            ForEach-Object { Write-Host "--- $($_.FullName) ---"; Get-Content $_.FullName -Tail 250 }
-          Write-Host "Listing NSIS scripts under build/win-release-installer/_CPack_Packages ..."
-          Get-ChildItem -Path "build/win-release-installer/_CPack_Packages" -Recurse -File -Filter "project.nsi" |
-            ForEach-Object { Write-Host "--- $($_.FullName) ---"; Get-Content $_.FullName -Tail 80 }
+          $roots = @(
+            "build/win-release-installer/_CPack_Packages",
+            (Join-Path -Path $env:RUNNER_TEMP -ChildPath "cpack-tmp")
+          )
+          foreach ($r in $roots) {
+            if (Test-Path -LiteralPath $r) {
+              Write-Host "Listing NSIS logs under $r ..."
+              Get-ChildItem -Path $r -Recurse -File -Filter "NSISOutput.log" |
+                ForEach-Object { Write-Host "--- $($_.FullName) ---"; Get-Content $_.FullName -Tail 250 }
+              Write-Host "Listing NSIS scripts under $r ..."
+              Get-ChildItem -Path $r -Recurse -File -Filter "project.nsi" |
+                ForEach-Object { Write-Host "--- $($_.FullName) ---"; Get-Content $_.FullName -Tail 80 }
+            }
+          }
           exit 1
 
       - name: Verify staged install tree (GTK runtime bundled)
@@ -149,10 +158,20 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          $exe = Get-ChildItem -Path "build/win-release-installer/_CPack_Packages" -Recurse -File -Filter "BalCom1A Configuration Utility.exe" |
-            Select-Object -First 1
+          $stageRoots = @(
+            "build/win-release-installer/_CPack_Packages",
+            (Join-Path -Path $env:RUNNER_TEMP -ChildPath "cpack-tmp")
+          )
+
+          $exe = $null
+          foreach ($root in $stageRoots) {
+            if (-not (Test-Path -LiteralPath $root)) { continue }
+            $exe = Get-ChildItem -Path $root -Recurse -File -Filter "BalCom1A Configuration Utility.exe" |
+              Select-Object -First 1
+            if ($exe) { break }
+          }
           if (-not $exe) {
-            throw "Staged EXE not found under build/win-release-installer/_CPack_Packages"
+            throw "Staged EXE not found under: $($stageRoots -join ', ')"
           }
 
           # Use DirectoryName to guarantee we have a plain string path.
