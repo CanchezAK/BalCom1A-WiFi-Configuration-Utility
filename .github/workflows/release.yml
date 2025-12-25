@@ -91,7 +91,18 @@ jobs:
         shell: msys2 {0}
         run: |
           set -euo pipefail
+          # msys2/setup-msys2 installs MSYS2 under RUNNER_TEMP (e.g. D:\a\_temp\msys64), not C:\msys64.
+          _runner_tmp="${RUNNER_TEMP:-}"
+          _runner_tmp_win=""
+          if [ -n "${_runner_tmp}" ]; then
+            _runner_tmp_win="$(cygpath -m "${_runner_tmp}")"
+          fi
+          if [ -z "${_runner_tmp_win}" ]; then
+            echo "RUNNER_TEMP is empty; falling back to C:/msys64" >&2
+            _runner_tmp_win="C:"
+          fi
           cmake --preset win-release-installer \
+            -DMSYS2_MINGW64_PREFIX="${_runner_tmp_win}/msys64/mingw64" \
             -DBALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL=ON \
             -DBALCOM_FLASH_TOOL_DOWNLOAD_URL="$BALCOM_FLASH_TOOL_DOWNLOAD_URL" \
             -DBALCOM_FLASH_TOOL_SHA256="$BALCOM_FLASH_TOOL_SHA256"
