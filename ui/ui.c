@@ -127,9 +127,12 @@ void ui_app_activate(GtkApplication *app, gpointer user_data) {
   }
 
   gboolean loaded = FALSE;
+  gchar *ui_path = NULL;
 
-  gchar *ui_path = platform_build_path_next_to_exe(UI_FILE);
-  if (ui_path) {
+  /* 1) Try installed data directory (Linux .deb / standard layout). */
+#ifdef BALCOM_UI_DATADIR
+  ui_path = g_build_filename(BALCOM_UI_DATADIR, UI_FILE, NULL);
+  if (ui_path && g_file_test(ui_path, G_FILE_TEST_EXISTS)) {
     loaded = gtk_builder_add_from_file(st->builder, ui_path, &err);
     if (!loaded) {
       if (st->keep_running_without_device) {
@@ -138,30 +141,43 @@ void ui_app_activate(GtkApplication *app, gpointer user_data) {
       g_clear_error(&err);
     }
   }
-
-  if (!loaded) {
-    loaded = gtk_builder_add_from_file(st->builder, UI_FILE, &err);
-  }
-
-#ifdef BALCOM_UI_DATADIR
-  if (!loaded) {
-    gchar *ui_datadir_path = g_build_filename(BALCOM_UI_DATADIR, UI_FILE, NULL);
-    loaded = gtk_builder_add_from_file(st->builder, ui_datadir_path, &err);
-    if (!loaded) {
-      if (st->keep_running_without_device) {
-        g_printerr("Failed to load UI from '%s': %s\n", ui_datadir_path, err ? err->message : "unknown error");
-      }
-      g_clear_error(&err);
-    }
-    g_free(ui_datadir_path);
-  }
+  g_free(ui_path);
+  ui_path = NULL;
 #endif
+
+  /* 2) Try next to the executable (portable/dev builds, Windows). */
+  if (!loaded) {
+    ui_path = platform_build_path_next_to_exe(UI_FILE);
+    if (ui_path && g_file_test(ui_path, G_FILE_TEST_EXISTS)) {
+      loaded = gtk_builder_add_from_file(st->builder, ui_path, &err);
+      if (!loaded) {
+        if (st->keep_running_without_device) {
+          g_printerr("Failed to load UI from '%s': %s\n", ui_path, err ? err->message : "unknown error");
+        }
+        g_clear_error(&err);
+      }
+    }
+    g_free(ui_path);
+    ui_path = NULL;
+  }
+
+  /* 3) Try relative to current working directory (dev/debug runs). */
+  if (!loaded) {
+    if (g_file_test(UI_FILE, G_FILE_TEST_EXISTS)) {
+      loaded = gtk_builder_add_from_file(st->builder, UI_FILE, &err);
+      if (!loaded) {
+        if (st->keep_running_without_device) {
+          g_printerr("Failed to load UI from '%s': %s\n", UI_FILE, err ? err->message : "unknown error");
+        }
+        g_clear_error(&err);
+      }
+    }
+  }
 
   if (!loaded) {
     if (st->keep_running_without_device) {
       gchar *cwd = g_get_current_dir();
-      g_printerr("Failed to load UI. Tried '%s' and '%s'. CWD='%s'. Error: %s\n",
-                 ui_path ? ui_path : "(null)",
+      g_printerr("Failed to load UI. Tried BALCOM_UI_DATADIR, next-to-exe, and '%s'. CWD='%s'. Error: %s\n",
                  UI_FILE,
                  cwd ? cwd : "(null)",
                  err ? err->message : "unknown error");
@@ -170,10 +186,8 @@ void ui_app_activate(GtkApplication *app, gpointer user_data) {
       platform_show_error("UI load error", "Failed to load UI file (glade.ui).");
     }
     g_clear_error(&err);
-    g_free(ui_path);
     return;
   }
-  g_free(ui_path);
 
   st->window1    = GTK_WINDOW(gtk_builder_get_object(st->builder, "window1"));
   st->pwdDialog  = GTK_WINDOW(gtk_builder_get_object(st->builder, "pwdDialog"));

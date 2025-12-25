@@ -65,6 +65,11 @@ jobs:
             throw "Expected build/esptool-asset/esptool.exe to be created"
           }
 
+          # Make the built esptool.exe available both to CMake (for bundling
+          # into the installer) and as a standalone GitHub Release asset.
+          New-Item -ItemType Directory -Force -Path packaging\flasher | Out-Null
+          Copy-Item build\esptool-asset\esptool.exe packaging\flasher\esptool.exe -Force
+
           $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath build\esptool-asset\esptool.exe).Hash.ToLower()
           "BALCOM_FLASH_TOOL_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 

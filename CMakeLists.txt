@@ -264,14 +264,17 @@ if (UNIX AND NOT APPLE)
   set(BALCOM_LINUX_ICON_ABS "${CMAKE_INSTALL_FULL_DATAROOTDIR}/pixmaps/${BALCOM_LINUX_ICON_INSTALL_NAME}")
 
   # Install a wrapper command without spaces so .desktop Exec is robust.
-  set(BALCOM_LINUX_WRAPPER_NAME "balcom1a-wifi-config")
+  # Expose it to users as "b1a-config" (also used as DEB package name).
+  set(BALCOM_LINUX_WRAPPER_NAME "b1a-config")
   set(_balcom_wrapper_in "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/balcom1a-wifi-config.sh.in")
   set(_balcom_wrapper_out "${CMAKE_CURRENT_BINARY_DIR}/${BALCOM_LINUX_WRAPPER_NAME}")
   configure_file("${_balcom_wrapper_in}" "${_balcom_wrapper_out}" @ONLY)
 
   # Configure desktop entry.
   set(BALCOM_DESKTOP_EXEC "${BALCOM_LINUX_WRAPPER_NAME}")
-  set(BALCOM_DESKTOP_ICON "${BALCOM_LINUX_ICON_ABS}")
+  # Use the icon "theme name" (without path/extension) so it stays valid
+  # even when CPack relocates the install prefix (e.g. in DEB packages).
+  set(BALCOM_DESKTOP_ICON "${BALCOM_LINUX_ICON_BASENAME}")
   set(_balcom_desktop_in "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/balcom1a-wifi-configuration-utility.desktop.in")
   set(_balcom_desktop_out "${CMAKE_CURRENT_BINARY_DIR}/balcom1a-wifi-configuration-utility.desktop")
   configure_file("${_balcom_desktop_in}" "${_balcom_desktop_out}" @ONLY)
@@ -552,7 +555,8 @@ if (UNIX AND NOT APPLE)
   # Debian policy: /usr, not /usr/local
   set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
   set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
-  set(CPACK_DEBIAN_PACKAGE_NAME "balcom1a-wifi-configuration-utility")
+  # Package is installed/removed as "b1a-config" (e.g. `apt install b1a-config`).
+  set(CPACK_DEBIAN_PACKAGE_NAME "b1a-config")
   set(CPACK_DEBIAN_PACKAGE_MAINTAINER "BalCom")
   # Let dpkg-shlibdeps compute dependencies from linked libs (recommended).
   set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
