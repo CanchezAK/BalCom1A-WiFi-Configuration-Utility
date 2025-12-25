@@ -494,42 +494,55 @@ FunctionEnd
       endif()
 
       # Download esptool.exe at install time if it isn't already present.
+      # Robustness rules:
+      # - never delete a bundled/existing esptool.exe on failures
+      # - download into $PLUGINSDIR first, then copy into $INSTDIR only on success
       # Uses NSISdl (bundled with NSIS). HTTPS is supported via WinINet.
       string(JOIN "\n" CPACK_NSIS_EXTRA_INSTALL_COMMANDS
-        "        ; --- BalCom: download esptool.exe if missing ---"
-        "        IfFileExists \"$INSTDIR\\esptool.exe\" +8 0"
+        "        ; --- BalCom: ensure esptool.exe is present ---"
+        "        StrCpy $R9 \"$INSTDIR\\esptool.exe\""
+        "        StrCpy $R8 \"$PLUGINSDIR\\balcom_esptool_download.exe\""
+        "        IfFileExists \"$R9\" BalCom_Esptool_Have BalCom_Esptool_Need"
+        "        BalCom_Esptool_Need:"
         "          DetailPrint \"Downloading esptool.exe ...\""
-        "          NSISdl::download /TIMEOUT=30000 \"${BALCOM_FLASH_TOOL_DOWNLOAD_URL}\" \"$INSTDIR\\esptool.exe\""
+        "          Delete \"$R8\""
+        "          NSISdl::download /TIMEOUT=30000 \"${BALCOM_FLASH_TOOL_DOWNLOAD_URL}\" \"$R8\""
         "          Pop $0"
-        "          StrCmp $0 \"success\" +3 0"
-        "            MessageBox MB_ICONEXCLAMATION \"Failed to download esptool.exe ($0).\\r\\n\\r\\nInstallation will continue, but Firmware Upgrade may not work until you place esptool.exe into:\\r\\n$INSTDIR\""
-        "            Delete \"$INSTDIR\\esptool.exe\""
+        "          StrCmp $0 \"success\" 0 BalCom_Esptool_DownloadFailed"
+        "          CopyFiles /SILENT \"$R8\" \"$R9\""
+        "          Goto BalCom_Esptool_Verify"
+        "        BalCom_Esptool_DownloadFailed:"
+        "          MessageBox MB_ICONEXCLAMATION \"Failed to download esptool.exe ($0).\\r\\n\\r\\nInstallation will continue, but Firmware Upgrade may not work until you place esptool.exe into:\\r\\n$INSTDIR\""
+        "          Goto BalCom_Esptool_Done"
+        "        BalCom_Esptool_Have:"
+        "          ; esptool.exe already present (bundled or from a previous install)."
+        "        BalCom_Esptool_Verify:"
       )
 
       if (NOT BALCOM_FLASH_TOOL_SHA256 STREQUAL "")
         # Append SHA256 verification. We compute actual hash via PowerShell and compare.
-        # On mismatch, delete esptool.exe and warn; do NOT abort installation.
+        # On mismatch, warn but DO NOT delete esptool.exe (to avoid breaking bundled installs).
         string(APPEND CPACK_NSIS_EXTRA_INSTALL_COMMANDS "\n")
         string(JOIN "\n" _balcom_sha_verify
-          "        ; --- BalCom: verify SHA256 of downloaded esptool.exe ---"
-          "        IfFileExists \"$INSTDIR\\esptool.exe\" 0 +18"
+          "        ; --- BalCom: verify SHA256 of esptool.exe (best-effort) ---"
+          "        IfFileExists \"$R9\" 0 BalCom_Esptool_Done"
           "          DetailPrint \"Verifying esptool.exe SHA256 ...\""
           "          StrCpy $1 \"$PLUGINSDIR\\balcom_esptool_sha256.txt\""
           "          Delete $1"
-          "          nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -Command \"$h=(Get-FileHash -Algorithm SHA256 -LiteralPath ''$INSTDIR\\esptool.exe'').Hash.ToLower(); Set-Content -NoNewline -LiteralPath ''$PLUGINSDIR\\balcom_esptool_sha256.txt'' -Value $h\"'"
-          "          IfFileExists \"$PLUGINSDIR\\balcom_esptool_sha256.txt\" 0 +10"
+          "          nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -Command \"$h=(Get-FileHash -Algorithm SHA256 -LiteralPath ''$R9'').Hash.ToLower(); Set-Content -NoNewline -LiteralPath ''$PLUGINSDIR\\balcom_esptool_sha256.txt'' -Value $h\"'"
+          "          IfFileExists \"$PLUGINSDIR\\balcom_esptool_sha256.txt\" 0 BalCom_Esptool_Done"
           "            FileOpen $2 \"$PLUGINSDIR\\balcom_esptool_sha256.txt\" r"
           "            FileRead $2 $3"
           "            FileClose $2"
           "            ; $3 may contain trailing CR/LF; compare only first 64 chars"
           "            StrCpy $3 $3 64"
-          "            StrCmp $3 \"${BALCOM_FLASH_TOOL_SHA256}\" +4 0"
-          "              MessageBox MB_ICONEXCLAMATION \"Downloaded esptool.exe failed SHA256 verification.\\r\\n\\r\\nInstallation will continue, but Firmware Upgrade may not work.\""
-          "              Delete \"$INSTDIR\\esptool.exe\""
-          "              Delete \"$PLUGINSDIR\\balcom_esptool_sha256.txt\""
+          "            StrCmp $3 \"${BALCOM_FLASH_TOOL_SHA256}\" BalCom_Esptool_Done 0"
+          "              MessageBox MB_ICONEXCLAMATION \"esptool.exe failed SHA256 verification.\\r\\n\\r\\nInstallation will continue, but Firmware Upgrade may not work.\""
         )
         string(APPEND CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${_balcom_sha_verify}")
       endif()
+
+      string(APPEND CPACK_NSIS_EXTRA_INSTALL_COMMANDS "\n        BalCom_Esptool_Done:")
     endif()
 
     # Older builds produced a legacy filename without the git/date suffix. Remove
