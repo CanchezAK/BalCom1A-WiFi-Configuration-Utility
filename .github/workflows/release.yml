@@ -109,13 +109,14 @@ jobs:
 
       - name: Build installer
         shell: msys2 {0}
+        id: build_installer
         continue-on-error: true
         run: |
           set -euo pipefail
           cmake --build --preset win-installer
 
-      - name: Dump NSIS log on failure
-        if: failure()
+      - name: Dump NSIS log if installer build failed
+        if: steps.build_installer.outcome != 'success'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
@@ -175,18 +176,30 @@ jobs:
       - name: Locate installer
         shell: pwsh
         run: |
-          Get-ChildItem -File "build/win-release-installer" -Filter "BalCom1A Configuration Utility-*.exe" |
-            Select-Object Name, Length, LastWriteTime |
+          $ErrorActionPreference = 'Stop'
+
+          # CPack should place the NSIS installer under CPACK_PACKAGE_DIRECTORY (build/win-release-installer),
+          # but to be robust we search recursively (some CPack/NSIS layouts put it under _CPack_Packages).
+          $candidates = Get-ChildItem -Path "build/win-release-installer" -Recurse -File -Filter "BalCom1A Configuration Utility-*.exe"
+
+          $candidates |
+            Select-Object FullName, Length, LastWriteTime |
+            Sort-Object LastWriteTime |
             Format-Table -AutoSize
-          if (-not (Get-ChildItem -File "build/win-release-installer" -Filter "BalCom1A Configuration Utility-*.exe")) {
-            throw "Installer not found under build/win-release-installer"
+
+          if (-not $candidates) {
+            Write-Host "Listing top-level build/win-release-installer/*.exe for debugging:"
+            Get-ChildItem -Path "build/win-release-installer" -File -Filter "*.exe" |
+              Select-Object FullName, Length, LastWriteTime |
+              Format-Table -AutoSize
+            throw "Installer not found under build/win-release-installer (recursive search)"
           }
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/win-release-installer/BalCom1A Configuration Utility-*.exe
+            build/win-release-installer/**/BalCom1A Configuration Utility-*.exe
             build/esptool-asset/esptool.exe
           generate_release_notes: true
 
