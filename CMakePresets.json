@@ -98,7 +98,6 @@
 
     {
       "name": "linux-release-deb-ci",
-      "hidden": true,
       "inherits": "linux-release-deb",
       "cacheVariables": {
         "BALCOM_BUNDLE_FLASH_TOOL": "ON",
@@ -156,7 +155,6 @@
     ,
     {
       "name": "linux-deb-ci",
-      "hidden": true,
       "displayName": "Linux (CI) - Make DEB (CPack)",
       "configurePreset": "linux-release-deb-ci",
       "targets": [
