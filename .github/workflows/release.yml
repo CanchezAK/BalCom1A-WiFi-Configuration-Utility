@@ -39,6 +39,9 @@ jobs:
             mingw-w64-x86_64-pkgconf
             mingw-w64-x86_64-gtk4
             mingw-w64-x86_64-glib2
+            mingw-w64-x86_64-gdk-pixbuf2
+            mingw-w64-x86_64-adwaita-icon-theme
+            mingw-w64-x86_64-hicolor-icon-theme
 
       - name: Install NSIS
         shell: pwsh
@@ -98,6 +101,46 @@ jobs:
         run: |
           set -euo pipefail
           cmake --build --preset win-installer
+
+      - name: Verify staged install tree (GTK runtime bundled)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $exe = Get-ChildItem -Path "build/win-release-installer/_CPack_Packages" -Recurse -File -Filter "BalCom1A Configuration Utility.exe" |
+            Select-Object -First 1
+          if (-not $exe) {
+            throw "Staged EXE not found under build/win-release-installer/_CPack_Packages"
+          }
+
+          $stage = $exe.Directory.FullName
+          Write-Host "Staged install dir: $stage"
+
+          $requiredFiles = @(
+            Join-Path $stage "BalCom1A Configuration Utility.exe",
+            Join-Path $stage "glade.ui",
+            Join-Path $stage "esptool.exe",
+            Join-Path $stage "libgtk-4-1.dll",
+            Join-Path $stage "libglib-2.0-0.dll",
+            Join-Path $stage "share/glib-2.0/schemas/gschemas.compiled"
+          )
+
+          foreach ($p in $requiredFiles) {
+            if (-not (Test-Path -LiteralPath $p)) {
+              throw "Missing required bundled file in installer stage: $p"
+            }
+          }
+
+          $pixbufCache = Get-ChildItem -Path (Join-Path $stage "lib/gdk-pixbuf-2.0") -Recurse -File -Filter "loaders.cache" |
+            Select-Object -First 1
+          if (-not $pixbufCache) {
+            throw "Missing gdk-pixbuf loaders.cache under $stage\\lib\\gdk-pixbuf-2.0"
+          }
+
+          $iconsDir = Join-Path $stage "share/icons"
+          if (-not (Test-Path -LiteralPath $iconsDir)) {
+            throw "Missing icons dir under staged install: $iconsDir"
+          }
 
       - name: Locate installer
         shell: pwsh
