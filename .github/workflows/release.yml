@@ -25,6 +25,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: packaging/flasher/requirements-ci.txt
 
       - name: Set up MSYS2 (MinGW64)
         uses: msys2/setup-msys2@v2
@@ -32,6 +34,7 @@ jobs:
           msystem: MINGW64
           update: true
           path-type: inherit
+          cache: true
           install: >-
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-cmake
@@ -53,7 +56,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install esptool pyinstaller
+          python -m pip install -r packaging\flasher\requirements-ci.txt
 
           New-Item -ItemType Directory -Force -Path build\esptool-asset | Out-Null
 
@@ -86,6 +89,19 @@ jobs:
           which pkg-config
           pkg-config --version
           pkg-config --modversion gtk4
+
+      - name: Verify MSYS2 runtime files (fast fail)
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          _runner_tmp_win="$(cygpath -m "${RUNNER_TEMP}")"
+          _prefix="${_runner_tmp_win}/msys64/mingw64"
+          test -f "${_prefix}/bin/libgtk-4-1.dll"
+          test -f "${_prefix}/bin/libglib-2.0-0.dll"
+          test -f "${_prefix}/bin/glib-compile-schemas.exe"
+          test -f "${_prefix}/bin/gdk-pixbuf-query-loaders.exe"
+          test -d "${_prefix}/share/icons/Adwaita"
+          test -d "${_prefix}/share/icons/hicolor"
 
       - name: Configure (installer preset)
         shell: msys2 {0}
@@ -217,6 +233,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: packaging/flasher/requirements-ci.txt
 
       - name: Install build dependencies
         run: |
@@ -229,7 +247,7 @@ jobs:
       - name: Build standalone esptool (PyInstaller)
         run: |
           python -m pip install --upgrade pip
-          python -m pip install esptool pyinstaller
+          python -m pip install -r packaging/flasher/requirements-ci.txt
 
           mkdir -p build/flasher
 

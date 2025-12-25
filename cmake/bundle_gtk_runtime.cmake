@@ -96,6 +96,29 @@ set(_icons_root "${MSYS2_MINGW64_PREFIX}/share/icons")
 set(_icons_adwaita "${_icons_root}/Adwaita")
 set(_icons_hicolor "${_icons_root}/hicolor")
 
+# MSYS2 packages sometimes contain symlinks inside icon themes. During CPack/NSIS
+# packaging this may result in "failed opening file" errors if a symlink target
+# is missing or cannot be materialized in the staging tree. To make packaging
+# robust, install only files that actually exist on disk.
+function(_balcom_install_tree_files src_root dst_root)
+  file(GLOB_RECURSE _entries RELATIVE "${src_root}" "${src_root}/*")
+  foreach(_rel IN LISTS _entries)
+    set(_abs "${src_root}/${_rel}")
+    if (IS_DIRECTORY "${_abs}")
+      continue()
+    endif()
+    if (NOT EXISTS "${_abs}")
+      continue()
+    endif()
+    get_filename_component(_rel_dir "${_rel}" DIRECTORY)
+    if (_rel_dir STREQUAL "")
+      file(INSTALL DESTINATION "${dst_root}" TYPE FILE FILES "${_abs}")
+    else()
+      file(INSTALL DESTINATION "${dst_root}/${_rel_dir}" TYPE FILE FILES "${_abs}")
+    endif()
+  endforeach()
+endfunction()
+
 if (NOT EXISTS "${_icons_adwaita}")
   message(FATAL_ERROR "Adwaita icon theme not found: ${_icons_adwaita} (install mingw-w64-x86_64-adwaita-icon-theme)")
 endif()
@@ -103,8 +126,8 @@ if (NOT EXISTS "${_icons_hicolor}")
   message(FATAL_ERROR "hicolor icon theme not found: ${_icons_hicolor} (install mingw-w64-x86_64-hicolor-icon-theme)")
 endif()
 
-file(INSTALL DESTINATION "${_dest}/share/icons" TYPE DIRECTORY FILES "${_icons_adwaita}")
-file(INSTALL DESTINATION "${_dest}/share/icons" TYPE DIRECTORY FILES "${_icons_hicolor}")
+_balcom_install_tree_files("${_icons_adwaita}" "${_dest}/share/icons/Adwaita")
+_balcom_install_tree_files("${_icons_hicolor}" "${_dest}/share/icons/hicolor")
 
 # GTK data (optional but common).
 set(_gtk_share_src "${MSYS2_MINGW64_PREFIX}/share/gtk-4.0")
