@@ -166,12 +166,12 @@ jobs:
 
       - name: Locate DEB
         run: |
-          ls -la build/linux-release-deb || true
-          find build/linux-release-deb -maxdepth 1 -type f -name "*.deb" -print -ls
+          ls -la build/linux-release-deb-ci || true
+          find build/linux-release-deb-ci -maxdepth 1 -type f -name "*.deb" -print -ls
 
       - name: Upload .deb to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/linux-release-deb/*.deb
+            build/linux-release-deb-ci/*.deb
           fail_on_unmatched_files: true
