@@ -103,9 +103,20 @@ static char *find_esptool_program(void) {
 
     for (int i = 0; local_candidates[i] != NULL; i++) {
       char *p = platform_build_path_next_to_exe(local_candidates[i]);
-      if (p && g_file_test(p, G_FILE_TEST_IS_EXECUTABLE)) {
+      if (!p) {
+        continue;
+      }
+#if defined(_WIN32)
+      /* On Windows, executable permission bits don't exist; treat an existing .exe as runnable.
+         (Some GLib builds can be conservative with G_FILE_TEST_IS_EXECUTABLE.) */
+      if (g_file_test(p, G_FILE_TEST_EXISTS)) {
         return p; /* already heap allocated */
       }
+#else
+      if (g_file_test(p, G_FILE_TEST_IS_EXECUTABLE)) {
+        return p; /* already heap allocated */
+      }
+#endif
       g_free(p);
     }
   }
@@ -198,7 +209,16 @@ static gboolean run_esptool_step(FirmwareUpgrade *up,
 
   if (!proc) {
     if (out_err) {
-      *out_err = g_strdup_printf("Failed to start esptool: %s", err ? err->message : "unknown error");
+      const char *exe_path = (argv && argv[0]) ? argv[0] : "";
+      if (exe_path[0] != '\0' && g_file_test(exe_path, G_FILE_TEST_EXISTS)) {
+        *out_err = g_strdup_printf(
+          "Failed to start esptool at '%s': %s\n\nThe file exists, but the OS could not execute it. "
+          "On Windows this often means a required runtime DLL is missing (e.g. Visual C++ runtime).",
+          exe_path,
+          err ? err->message : "unknown error");
+      } else {
+        *out_err = g_strdup_printf("Failed to start esptool: %s", err ? err->message : "unknown error");
+      }
     }
     g_clear_error(&err);
     return FALSE;

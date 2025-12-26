@@ -76,6 +76,22 @@ jobs:
           New-Item -ItemType Directory -Force -Path packaging\flasher | Out-Null
           Copy-Item build\esptool-asset\esptool.exe packaging\flasher\esptool.exe -Force
 
+          # Collect MSVC runtime DLLs that PyInstaller-built executables may require.
+          # This helps esptool.exe run on clean machines without VC++ Redistributable.
+          $pythonExe = (Get-Command python).Source
+          $pythonRoot = Split-Path -Parent $pythonExe
+          $vcDlls = @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")
+          foreach ($dll in $vcDlls) {
+            $src = Join-Path -Path $pythonRoot -ChildPath $dll
+            if (Test-Path -LiteralPath $src) {
+              Copy-Item -LiteralPath $src -Destination (Join-Path -Path "build\esptool-asset" -ChildPath $dll) -Force
+              Copy-Item -LiteralPath $src -Destination (Join-Path -Path "packaging\flasher" -ChildPath $dll) -Force
+              Write-Host "Bundling VC runtime DLL for esptool: $dll"
+            } else {
+              Write-Host "VC runtime DLL not found next to python.exe: $src (skipping)"
+            }
+          }
+
           $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath build\esptool-asset\esptool.exe).Hash.ToLower()
           "BALCOM_FLASH_TOOL_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -120,9 +136,7 @@ jobs:
           cmake --preset win-release-installer \
             -DMSYS2_MINGW64_PREFIX="${_runner_tmp_win}/msys64/mingw64" \
             -DCPACK_TEMPORARY_DIRECTORY="${_runner_tmp_win}/cpack-tmp" \
-            -DBALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL=ON \
-            -DBALCOM_FLASH_TOOL_DOWNLOAD_URL="$BALCOM_FLASH_TOOL_DOWNLOAD_URL" \
-            -DBALCOM_FLASH_TOOL_SHA256="$BALCOM_FLASH_TOOL_SHA256"
+            -DBALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL=OFF
 
       - name: Build installer
         shell: msys2 {0}

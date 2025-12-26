@@ -297,10 +297,21 @@ if (WIN32)
   )
 
   if (BALCOM_BUNDLE_FLASH_TOOL)
+    get_filename_component(_balcom_flasher_dir "${BALCOM_FLASH_TOOL_EXECUTABLE}" DIRECTORY)
+
     install(PROGRAMS "${BALCOM_FLASH_TOOL_EXECUTABLE}"
       DESTINATION .
       RENAME esptool.exe
     )
+
+    # PyInstaller bootloaders are commonly linked against MSVC runtime.
+    # If these DLLs are present next to the built esptool.exe (CI can provide them),
+    # ship them alongside so esptool.exe runs on clean Windows machines.
+    foreach(_balcom_vc_dll IN ITEMS vcruntime140.dll vcruntime140_1.dll msvcp140.dll)
+      if (EXISTS "${_balcom_flasher_dir}/${_balcom_vc_dll}")
+        install(FILES "${_balcom_flasher_dir}/${_balcom_vc_dll}" DESTINATION .)
+      endif()
+    endforeach()
 
     if (EXISTS "${BALCOM_FLASH_TOOL_NOTICES}")
       install(FILES "${BALCOM_FLASH_TOOL_NOTICES}"
