@@ -47,6 +47,26 @@
     },
 
     {
+      "name": "win-release-installer-actions",
+      "displayName": "Windows (Actions-like) - Release (Installer + download esptool)",
+      "inherits": "win-release",
+      "cacheVariables": {
+        "BALCOM_ENABLE_INSTALLER": "ON",
+        "BALCOM_BUNDLE_GTK_RUNTIME": "ON",
+
+        "BALCOM_BUNDLE_FLASH_TOOL": "OFF",
+        "BALCOM_FLASH_TOOL_EXECUTABLE": "",
+
+        "BALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL": "ON",
+        "BALCOM_FLASH_TOOL_DOWNLOAD_URL": "https://github.com/espressif/esptool/releases/download/v5.1.0/esptool-v5.1.0-windows-amd64.zip",
+        "BALCOM_FLASH_TOOL_SHA256": "",
+
+        "MSYS2_MINGW64_PREFIX": "C:/msys64/mingw64",
+        "CPACK_TEMPORARY_DIRECTORY": "${sourceDir}/build/cpack-tmp"
+      }
+    },
+
+    {
       "name": "win-release-installer-ci",
       "hidden": true,
       "inherits": "win-release-installer",
@@ -118,6 +138,15 @@
       "name": "win-installer",
       "displayName": "Windows (MSYS2/MinGW) - Make Installer (NSIS)",
       "configurePreset": "win-release-installer",
+      "targets": [
+        "make_installer"
+      ]
+    },
+
+    {
+      "name": "win-installer-actions",
+      "displayName": "Windows (Actions-like) - Make Installer (NSIS)",
+      "configurePreset": "win-release-installer-actions",
       "targets": [
         "make_installer"
       ]

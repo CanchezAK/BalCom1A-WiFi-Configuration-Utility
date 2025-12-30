@@ -16,16 +16,22 @@ option(BALCOM_BUNDLE_FLASH_TOOL "Bundle a flashing tool (esptool) with the app" 
 set(BALCOM_FLASH_TOOL_EXECUTABLE "" CACHE FILEPATH "Path to flasher executable to bundle (recommended: standalone esptool/espflash binary)")
 set(BALCOM_FLASH_TOOL_NOTICES "${CMAKE_CURRENT_SOURCE_DIR}/packaging/flasher/THIRD_PARTY_NOTICES.txt" CACHE FILEPATH "Optional third-party notices file to ship with the bundled flasher")
 
-# Optional: let the Windows NSIS installer download esptool.exe during installation.
+# Optional: let the Windows NSIS installer download the official esptool ZIP during installation.
 # This keeps the installer smaller and avoids bundling the flasher inside the .exe.
-option(BALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL "(Windows/NSIS) Download esptool.exe during installation" OFF)
-set(BALCOM_FLASH_TOOL_DOWNLOAD_URL "" CACHE STRING "(Windows/NSIS) URL to download esptool.exe from")
+option(BALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL "(Windows/NSIS) Download esptool (.zip) during installation" OFF)
+set(BALCOM_FLASH_TOOL_DOWNLOAD_URL "" CACHE STRING "(Windows/NSIS) URL to download esptool zip (.zip) from")
 set(BALCOM_FLASH_TOOL_SHA256 "" CACHE STRING "(Windows/NSIS) Expected SHA256 of downloaded esptool.exe (hex, optional; if empty, skip verification)")
 
 # If a prebuilt flasher binary is present in packaging/flasher/, enable bundling
 # by default so that released installers (.exe / .deb) always include the tool
 # without requiring extra CMake flags.
-if (BALCOM_FLASH_TOOL_EXECUTABLE STREQUAL "")
+#
+# IMPORTANT:
+# If the NSIS installer is configured to download the flasher at install time,
+# do NOT auto-enable bundling even if a local esptool.exe happens to be present.
+# Otherwise the installer payload will already contain esptool.exe and the
+# download step will never trigger, making local testing diverge from CI.
+if (BALCOM_FLASH_TOOL_EXECUTABLE STREQUAL "" AND NOT BALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL)
   if (WIN32)
     set(_BALCOM_DEFAULT_FLASHER "${CMAKE_CURRENT_SOURCE_DIR}/packaging/flasher/esptool.exe")
   else()
@@ -504,7 +510,7 @@ FunctionEnd
         message(FATAL_ERROR "BALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL is ON, but BALCOM_FLASH_TOOL_DOWNLOAD_URL is empty")
       endif()
 
-      # Download esptool.exe at install time if it isn't already present.
+      # Download official esptool zip at install time if esptool.exe isn't already present.
       # Robustness rules:
       # - never delete a bundled/existing esptool.exe on failures
       # - download into $PLUGINSDIR first, then copy into $INSTDIR only on success
@@ -512,24 +518,44 @@ FunctionEnd
       string(JOIN "\n" CPACK_NSIS_EXTRA_INSTALL_COMMANDS
         "        ; --- BalCom: ensure esptool.exe is present ---"
         "        StrCpy $R9 \"$INSTDIR\\esptool.exe\""
-        "        StrCpy $R8 \"$PLUGINSDIR\\balcom_esptool_download.exe\""
+        "        StrCpy $R8 \"$PLUGINSDIR\\balcom_esptool.zip\""
+        "        StrCpy $R7 \"$INSTDIR\\esptool_dist\""
         "        IfFileExists \"$R9\" BalCom_Esptool_Have BalCom_Esptool_Need"
         "        BalCom_Esptool_Need:"
-        "          DetailPrint \"Downloading esptool.exe ...\""
+        "          DetailPrint \"Downloading esptool (zip) ...\""
         "          Delete \"$R8\""
-        "          nsExec::ExecToLog '$SYSDIR\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"$ErrorActionPreference=\\\"Stop\\\"; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $ProgressPreference=\\\"SilentlyContinue\\\"; try { Start-BitsTransfer -Source ''${BALCOM_FLASH_TOOL_DOWNLOAD_URL}'' -Destination ''$R8'' -ErrorAction Stop } catch { Invoke-WebRequest -UseBasicParsing -Uri ''${BALCOM_FLASH_TOOL_DOWNLOAD_URL}'' -OutFile ''$R8'' -Headers @{ ''User-Agent'' = ''BalCom1AInstaller'' } }\"'"
+        "          RMDir /r \"$R7\""
+        "          CreateDirectory \"$R7\""
+        "          ; Try curl.exe first (simpler quoting; present on most Win10/11)."
+        "          nsExec::ExecToLog 'cmd /c \"\"%SystemRoot%\\System32\\curl.exe\" -L --fail --silent --show-error -A \"BalCom1AInstaller\" -o \"$R8\" \"${BALCOM_FLASH_TOOL_DOWNLOAD_URL}\"\"'"
         "          Pop $0"
-        "          StrCmp $0 \"0\" 0 BalCom_Esptool_DownloadFailed"
+        "          StrCmp $0 \"0\" BalCom_Esptool_DownloadOk 0"
+        "          ; Fallback: PowerShell (BITS -> Invoke-WebRequest)."
+        "          nsExec::ExecToLog '$SYSDIR\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"$ErrorActionPreference=\\\"Stop\\\"; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $ProgressPreference=\\\"SilentlyContinue\\\"; try { Start-BitsTransfer -Source \\\"${BALCOM_FLASH_TOOL_DOWNLOAD_URL}\\\" -Destination \\\"$R8\\\" -ErrorAction Stop } catch { Invoke-WebRequest -UseBasicParsing -Uri \\\"${BALCOM_FLASH_TOOL_DOWNLOAD_URL}\\\" -OutFile \\\"$R8\\\" -Headers @{ \\\"User-Agent\\\" = \\\"BalCom1AInstaller\\\" } }\"'"
+        "          Pop $0"
+        "          StrCmp $0 \"0\" BalCom_Esptool_DownloadOk 0"
+        "          Goto BalCom_Esptool_DownloadFailed"
+        "        BalCom_Esptool_DownloadOk:"
         "          IfFileExists \"$R8\" 0 BalCom_Esptool_DownloadFailed"
-        "          CopyFiles /SILENT \"$R8\" \"$R9\""
+        "          DetailPrint \"Extracting esptool zip ...\""
+        "          nsExec::ExecToLog '$SYSDIR\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"$ErrorActionPreference=\\\"Stop\\\"; Expand-Archive -LiteralPath \\\"$R8\\\" -DestinationPath \\\"$R7\\\" -Force\"'"
+        "          Pop $0"
+        "          StrCmp $0 \"0\" 0 BalCom_Esptool_ExtractFailed"
+        "          DetailPrint \"Placing esptool.exe into installation folder ...\""
+        "          nsExec::ExecToLog '$SYSDIR\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"$ErrorActionPreference=\\\"Stop\\\"; $exe=(Get-ChildItem -Path \\\"$R7\\\" -Recurse -File -Filter esptool.exe | Select-Object -First 1); if (-not $exe) { exit 3 }; Copy-Item -LiteralPath $exe.FullName -Destination \\\"$R9\\\" -Force\"'"
+        "          Pop $0"
+        "          StrCmp $0 \"0\" 0 BalCom_Esptool_CopyFailed"
         "          IfFileExists \"$R9\" 0 BalCom_Esptool_CopyFailed"
         "          nsExec::ExecToLog '$SYSDIR\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"try { Unblock-File -LiteralPath ''$R9'' } catch { }\"'"
         "          Goto BalCom_Esptool_Verify"
         "        BalCom_Esptool_DownloadFailed:"
-        "          MessageBox MB_ICONEXCLAMATION \"Failed to download esptool.exe (exit code: $0).\\r\\n\\r\\nInstallation will continue, but Firmware Upgrade may not work until you place esptool.exe into:\\r\\n$INSTDIR\""
+        "          MessageBox MB_ICONEXCLAMATION \"Failed to download esptool zip (exit code: $0).\\r\\n\\r\\nInstallation will continue, but Firmware Upgrade may not work until you place esptool.exe into:\\r\\n$INSTDIR\""
+        "          Goto BalCom_Esptool_Done"
+        "        BalCom_Esptool_ExtractFailed:"
+        "          MessageBox MB_ICONEXCLAMATION \"Downloaded esptool zip but could not extract it (exit code: $0).\\r\\n\\r\\nInstallation will continue, but Firmware Upgrade may not work until you place esptool.exe into:\\r\\n$INSTDIR\""
         "          Goto BalCom_Esptool_Done"
         "        BalCom_Esptool_CopyFailed:"
-        "          MessageBox MB_ICONEXCLAMATION \"Downloaded esptool.exe but could not place it into the installation folder.\\r\\n\\r\\nInstallation will continue, but Firmware Upgrade may not work until you place esptool.exe into:\\r\\n$INSTDIR\""
+        "          MessageBox MB_ICONEXCLAMATION \"Downloaded/extracted esptool but could not place esptool.exe into the installation folder (exit code: $0).\\r\\n\\r\\nInstallation will continue, but Firmware Upgrade may not work until you place esptool.exe into:\\r\\n$INSTDIR\""
         "          Goto BalCom_Esptool_Done"
         "        BalCom_Esptool_Have:"
         "          ; esptool.exe already present (bundled or from a previous install)."

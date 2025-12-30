@@ -13,8 +13,7 @@ jobs:
   build-windows-installer:
     runs-on: windows-latest
     env:
-      BALCOM_FLASH_TOOL_DOWNLOAD_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/esptool.exe
-      ESPTOOL_OFFICIAL_ZIP_URL: https://github.com/espressif/esptool/releases/download/v5.1.0/esptool-v5.1.0-windows-amd64.zip
+      BALCOM_FLASH_TOOL_DOWNLOAD_URL: https://github.com/espressif/esptool/releases/download/v5.1.0/esptool-v5.1.0-windows-amd64.zip
 
     steps:
       - name: Checkout
@@ -47,45 +46,10 @@ jobs:
           choco install nsis -y
           & "C:\Program Files (x86)\NSIS\makensis.exe" /VERSION
 
-      - name: Download esptool.exe (official release zip)
+      - name: Note (installer downloads esptool zip at install time)
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-          $zipUrl = $env:ESPTOOL_OFFICIAL_ZIP_URL
-          if ([string]::IsNullOrWhiteSpace($zipUrl)) {
-            throw "ESPTOOL_OFFICIAL_ZIP_URL is empty"
-          }
-
-          $tmpRoot = Join-Path -Path $env:RUNNER_TEMP -ChildPath "balcom-esptool"
-          $zipPath = Join-Path -Path $tmpRoot -ChildPath "esptool.zip"
-          $extractDir = Join-Path -Path $tmpRoot -ChildPath "unzipped"
-
-          New-Item -ItemType Directory -Force -Path $tmpRoot | Out-Null
-          if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
-          if (Test-Path -LiteralPath $extractDir) { Remove-Item -LiteralPath $extractDir -Recurse -Force }
-
-          Write-Host "Downloading: $zipUrl"
-          Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
-          if (-not (Test-Path -LiteralPath $zipPath)) {
-            throw "Download failed: $zipPath not found"
-          }
-
-          Expand-Archive -LiteralPath $zipPath -DestinationPath $extractDir -Force
-
-          $exe = Get-ChildItem -Path $extractDir -Recurse -File -Filter "esptool.exe" | Select-Object -First 1
-          if (-not $exe) {
-            Write-Host "Zip contents:"; Get-ChildItem -Path $extractDir -Recurse | Select-Object -First 200 | Format-Table -AutoSize
-            throw "esptool.exe not found in extracted zip"
-          }
-          Write-Host "Using esptool: $($exe.FullName)"
-
-          New-Item -ItemType Directory -Force -Path build\esptool-asset | Out-Null
-          Copy-Item -LiteralPath $exe.FullName -Destination build\esptool-asset\esptool.exe -Force
-
-          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath build\esptool-asset\esptool.exe).Hash.ToLower()
-          "BALCOM_FLASH_TOOL_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Installer will download: $env:BALCOM_FLASH_TOOL_DOWNLOAD_URL"
 
       - name: Toolchain sanity check
         shell: msys2 {0}
@@ -111,7 +75,7 @@ jobs:
           test -d "${_prefix}/share/icons/Adwaita"
           test -d "${_prefix}/share/icons/hicolor"
 
-      - name: Configure (installer preset)
+      - name: Configure (Actions-like installer preset)
         shell: msys2 {0}
         run: |
           set -euo pipefail
@@ -125,14 +89,11 @@ jobs:
             echo "RUNNER_TEMP is empty; falling back to C:/msys64" >&2
             _runner_tmp_win="C:"
           fi
-          cmake --preset win-release-installer \
+          cmake --preset win-release-installer-actions \
             -DMSYS2_MINGW64_PREFIX="${_runner_tmp_win}/msys64/mingw64" \
             -DCPACK_TEMPORARY_DIRECTORY="${_runner_tmp_win}/cpack-tmp" \
-            -DBALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL=ON \
-            -DBALCOM_FLASH_TOOL_DOWNLOAD_URL="${BALCOM_FLASH_TOOL_DOWNLOAD_URL}" \
             -DBALCOM_FLASH_TOOL_SHA256="${BALCOM_FLASH_TOOL_SHA256:-}" \
-            -DBALCOM_BUNDLE_FLASH_TOOL=OFF \
-            -DBALCOM_FLASH_TOOL_EXECUTABLE=
+            -DBALCOM_FLASH_TOOL_DOWNLOAD_URL="${BALCOM_FLASH_TOOL_DOWNLOAD_URL}"
 
       - name: Build installer
         shell: msys2 {0}
@@ -140,7 +101,7 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          cmake --build --preset win-installer
+          cmake --build --preset win-installer-actions
 
       - name: Dump NSIS log if installer build failed
         if: steps.build_installer.outcome != 'success'
@@ -269,7 +230,6 @@ jobs:
         with:
           files: |
             ${{ steps.locate_installer.outputs.installer_path }}
-            build/esptool-asset/esptool.exe
           fail_on_unmatched_files: true
           generate_release_notes: true
 

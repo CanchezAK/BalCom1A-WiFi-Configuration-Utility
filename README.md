@@ -204,7 +204,7 @@ cmake --preset win-release -DBALCOM_ENABLE_INSTALLER=OFF
 
 - Installer по умолчанию **бандлит GTK/GLib runtime** внутрь себя (DLL + runtime data), чтобы приложение запускалось на «чистой» Windows.
 - `esptool.exe` для функции **Firmware Upgrade** может быть доставлен двумя способами:
-  - (CI/релиз) инсталлятор **скачивает `esptool.exe` автоматически** из GitHub Release assets во время установки (нужен доступ в интернет).
+  - (CI/релиз) инсталлятор **скачивает официальный архив esptool (.zip) и распаковывает его** во время установки (нужен доступ в интернет).
   - (офлайн) если интернет недоступен, установка всё равно завершится, но прошивка не будет работать, пока `esptool.exe` не будет размещён рядом с приложением (в папке установки).
 - В установщике есть опции ярлыков (по умолчанию включены обе):
   - ярлык в Start Menu (страница выбора папки Start Menu)
@@ -213,6 +213,23 @@ cmake --preset win-release -DBALCOM_ENABLE_INSTALLER=OFF
 
 ```powershell
 cmake --preset win-release -DMSYS2_MINGW64_PREFIX="D:/msys64/mingw64"
+```
+
+### Windows: Actions-like сборка установщика (как в GitHub Actions, но локально быстрее)
+
+Чтобы локально получить установщик с тем же поведением, что и в CI (installer + скачивание `esptool.exe` во время установки), используйте пресеты:
+
+```powershell
+cmake --preset win-release-installer-actions
+cmake --build --preset win-installer-actions
+```
+
+В пресете `win-release-installer-actions` URL скачивания задан жёстко как официальный архив esptool (.zip) (из релиза espressif).
+
+Опционально: если у вас не блокируется запуск скриптов, есть вспомогательный скрипт сборки (готовит `esptool.exe` из официального zip и печатает путь к installer):
+
+```powershell
+./scripts/build-win-installer-actions-like.ps1
 ```
 
 ---
