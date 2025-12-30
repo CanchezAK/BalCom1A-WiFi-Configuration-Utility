@@ -14,6 +14,7 @@ jobs:
     runs-on: windows-latest
     env:
       BALCOM_FLASH_TOOL_DOWNLOAD_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/esptool.exe
+      ESPTOOL_OFFICIAL_ZIP_URL: https://github.com/espressif/esptool/releases/download/v5.1.0/esptool-v5.1.0-windows-amd64.zip
 
     steps:
       - name: Checkout
@@ -46,16 +47,42 @@ jobs:
           choco install nsis -y
           & "C:\Program Files (x86)\NSIS\makensis.exe" /VERSION
 
-      - name: Prepare bundled esptool.exe (from repo)
+      - name: Download esptool.exe (official release zip)
         shell: pwsh
         run: |
-          $src = "packaging\flasher\esptool.exe"
-          if (-not (Test-Path -LiteralPath $src)) {
-            throw "Expected $src to exist in the repo at the tagged revision ($env:GITHUB_REF)"
+          $ErrorActionPreference = 'Stop'
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+          $zipUrl = $env:ESPTOOL_OFFICIAL_ZIP_URL
+          if ([string]::IsNullOrWhiteSpace($zipUrl)) {
+            throw "ESPTOOL_OFFICIAL_ZIP_URL is empty"
           }
 
+          $tmpRoot = Join-Path -Path $env:RUNNER_TEMP -ChildPath "balcom-esptool"
+          $zipPath = Join-Path -Path $tmpRoot -ChildPath "esptool.zip"
+          $extractDir = Join-Path -Path $tmpRoot -ChildPath "unzipped"
+
+          New-Item -ItemType Directory -Force -Path $tmpRoot | Out-Null
+          if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+          if (Test-Path -LiteralPath $extractDir) { Remove-Item -LiteralPath $extractDir -Recurse -Force }
+
+          Write-Host "Downloading: $zipUrl"
+          Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
+          if (-not (Test-Path -LiteralPath $zipPath)) {
+            throw "Download failed: $zipPath not found"
+          }
+
+          Expand-Archive -LiteralPath $zipPath -DestinationPath $extractDir -Force
+
+          $exe = Get-ChildItem -Path $extractDir -Recurse -File -Filter "esptool.exe" | Select-Object -First 1
+          if (-not $exe) {
+            Write-Host "Zip contents:"; Get-ChildItem -Path $extractDir -Recurse | Select-Object -First 200 | Format-Table -AutoSize
+            throw "esptool.exe not found in extracted zip"
+          }
+          Write-Host "Using esptool: $($exe.FullName)"
+
           New-Item -ItemType Directory -Force -Path build\esptool-asset | Out-Null
-          Copy-Item -LiteralPath $src -Destination build\esptool-asset\esptool.exe -Force
+          Copy-Item -LiteralPath $exe.FullName -Destination build\esptool-asset\esptool.exe -Force
 
           $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath build\esptool-asset\esptool.exe).Hash.ToLower()
           "BALCOM_FLASH_TOOL_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
