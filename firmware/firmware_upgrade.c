@@ -5,6 +5,10 @@
 
 #include "platform/platform.h"
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
 /* BALCOM_UI_DATADIR may be defined for Linux packages; see CMakeLists.txt */
 
 struct FirmwareUpgrade {
@@ -35,6 +39,127 @@ typedef struct {
   gboolean success;
   char *message;
 } DoneDispatch;
+
+static void post_progress(FirmwareUpgrade *up, double fraction_0_1, const char *status);
+
+typedef struct {
+  FirmwareUpgrade *up;
+  const char *phase;
+  double base;
+  double span;
+  int last_pct;
+  double last_frac;
+  GString *log;
+} EsptoolProgressCtx;
+
+static void esptool_handle_output_line(EsptoolProgressCtx *ctx, const char *line_utf8) {
+  if (!ctx || !ctx->up || !line_utf8 || !*line_utf8) {
+    return;
+  }
+
+  FirmwareUpgrade *up = ctx->up;
+  const char *phase = ctx->phase ? ctx->phase : "";
+
+  gboolean matched_progress = FALSE;
+
+  if (up->bytes_re) {
+    GMatchInfo *mi = NULL;
+    if (g_regex_match(up->bytes_re, line_utf8, 0, &mi)) {
+      gchar *m_read = g_match_info_fetch(mi, 1);
+      gchar *m_total = g_match_info_fetch(mi, 2);
+      if (m_read && m_total) {
+        gdouble read_bytes = g_ascii_strtod(m_read, NULL);
+        gdouble total_bytes = g_ascii_strtod(m_total, NULL);
+        if (total_bytes > 0.0 && read_bytes >= 0.0) {
+          gdouble frac = read_bytes / total_bytes;
+          if (frac < 0.0) frac = 0.0;
+          if (frac > 1.0) frac = 1.0;
+          if (frac < ctx->last_frac) {
+            frac = ctx->last_frac;
+          }
+          if (frac > ctx->last_frac) {
+            ctx->last_frac = frac;
+            double f = ctx->base + ctx->span * frac;
+            char status[256];
+            g_snprintf(status, sizeof(status), "%s: %.1f%%", phase, frac * 100.0);
+            post_progress(up, f, status);
+          }
+          matched_progress = TRUE;
+        }
+      }
+      g_free(m_read);
+      g_free(m_total);
+    }
+    if (mi) {
+      g_match_info_free(mi);
+    }
+  }
+
+  if (!matched_progress && up->pct_re) {
+    GMatchInfo *mi = NULL;
+    if (g_regex_match(up->pct_re, line_utf8, 0, &mi)) {
+      gchar *m = g_match_info_fetch(mi, 1);
+      if (m) {
+        int pct = atoi(m);
+        if (pct >= 0 && pct <= 100) {
+          if (pct < ctx->last_pct) {
+            pct = ctx->last_pct;
+          }
+          if (pct != ctx->last_pct) {
+            ctx->last_pct = pct;
+            double frac = (double)pct / 100.0;
+            if (frac < ctx->last_frac) {
+              frac = ctx->last_frac;
+            }
+            if (frac > ctx->last_frac) {
+              ctx->last_frac = frac;
+              double f = ctx->base + ctx->span * frac;
+              char status[256];
+              g_snprintf(status, sizeof(status), "%s: %d%%", phase, pct);
+              post_progress(up, f, status);
+            }
+          }
+        }
+        g_free(m);
+      }
+    }
+    if (mi) {
+      g_match_info_free(mi);
+    }
+  }
+}
+
+static void esptool_consume_text_chunk(EsptoolProgressCtx *ctx, const char *text_utf8, gsize text_len) {
+  if (!ctx || !text_utf8 || text_len == 0) {
+    return;
+  }
+
+  /* Keep last few KB of output for diagnostics. */
+  if (ctx->log && ctx->log->len < 4096) {
+    gsize allowed = 4096 - ctx->log->len;
+    g_string_append_len(ctx->log, text_utf8, (text_len < allowed) ? text_len : allowed);
+  }
+
+  /* Split by CR/LF to handle esptool progress updates which often overwrite the same line (\r). */
+  const char *p = text_utf8;
+  const char *end = text_utf8 + text_len;
+  GString *line = g_string_new(NULL);
+  while (p < end) {
+    char c = *p++;
+    if (c == '\r' || c == '\n') {
+      if (line->len > 0) {
+        esptool_handle_output_line(ctx, line->str);
+        g_string_set_size(line, 0);
+      }
+      continue;
+    }
+    g_string_append_c(line, c);
+  }
+  if (line->len > 0) {
+    esptool_handle_output_line(ctx, line->str);
+  }
+  g_string_free(line, TRUE);
+}
 
 static gboolean dispatch_progress(gpointer data) {
   ProgressDispatch *d = (ProgressDispatch *)data;
@@ -152,6 +277,44 @@ static char *find_esptool_program(void) {
   return NULL;
 }
 
+static char *build_esptool_not_found_message(void) {
+  GString *msg = g_string_new(NULL);
+  g_string_append(msg,
+                  "Утилита прошивки не найдена.\n\n"
+                  "Приложение сначала ищет 'esptool' рядом с исполняемым файлом, затем пробует найти его в PATH.\n");
+
+  const char *candidates[] = {
+#if defined(_WIN32)
+    "esptool.exe",
+    "balcom-esptool.exe",
+#endif
+    "esptool",
+    "balcom-esptool",
+    NULL,
+  };
+
+  g_string_append(msg, "\nПроверенные пути рядом с .exe:\n");
+  for (int i = 0; candidates[i] != NULL; i++) {
+    char *p = platform_build_path_next_to_exe(candidates[i]);
+    if (!p) {
+      g_string_append_printf(msg, "- %s (failed to resolve exe directory)\n", candidates[i]);
+      continue;
+    }
+    gboolean exists = g_file_test(p, G_FILE_TEST_EXISTS);
+    g_string_append_printf(msg, "- %s (%s)\n", p, exists ? "есть" : "нет");
+    g_free(p);
+  }
+
+#if defined(_WIN32)
+  g_string_append(msg,
+                  "\nПримечание для Windows:\n"
+                  "- Если установка выполнялась через NSIS-инсталлятор, esptool.exe скачивается во время установки (нужен доступ в интернет).\n"
+                  "- Если ПК офлайн или доступ к GitHub заблокирован прокси/фаерволом, установка может завершиться без esptool.exe, и прошивка не будет работать, пока вы не положите esptool.exe в папку установки рядом с приложением.\n");
+#endif
+
+  return g_string_free(msg, FALSE);
+}
+
 static gboolean path_ends_with_ci(const char *path, const char *suffix) {
   if (!path || !suffix) {
     return FALSE;
@@ -195,12 +358,161 @@ static gboolean run_esptool_step(FirmwareUpgrade *up,
     *out_err = NULL;
   }
 
+  EsptoolProgressCtx ctx = {0};
+  ctx.up = up;
+  ctx.phase = phase;
+  ctx.base = base;
+  ctx.span = span;
+  ctx.last_pct = -1;
+  ctx.last_frac = -1.0;
+  ctx.log = g_string_new(NULL);
+
+  post_progress(up, base, phase);
+
+#if defined(_WIN32)
+  /* Windows: use CreateProcessW with CREATE_NO_WINDOW to prevent console windows. */
+  if (!argv || !argv[0]) {
+    if (out_err) {
+      *out_err = g_strdup("Invalid esptool argv");
+    }
+    g_string_free(ctx.log, TRUE);
+    return FALSE;
+  }
+
+  /* Build a Windows command line with basic quoting. */
+  GString *cmd = g_string_new(NULL);
+  for (int i = 0; argv[i] != NULL; i++) {
+    const char *a = argv[i];
+    if (i > 0) {
+      g_string_append_c(cmd, ' ');
+    }
+    gboolean need_quotes = (strpbrk(a, " \t\n\v\"" ) != NULL);
+    if (!need_quotes) {
+      g_string_append(cmd, a);
+      continue;
+    }
+    g_string_append_c(cmd, '"');
+    /* Escape embedded quotes. (Our args normally don't contain them.) */
+    for (const char *s = a; *s; s++) {
+      if (*s == '"') {
+        g_string_append(cmd, "\\\"");
+      } else {
+        g_string_append_c(cmd, *s);
+      }
+    }
+    g_string_append_c(cmd, '"');
+  }
+
+  gunichar2 *exe_w = g_utf8_to_utf16(argv[0], -1, NULL, NULL, NULL);
+  gunichar2 *cmd_w = g_utf8_to_utf16(cmd->str, -1, NULL, NULL, NULL);
+  g_string_free(cmd, TRUE);
+
+  if (!exe_w || !cmd_w) {
+    if (out_err) {
+      *out_err = g_strdup("Failed to build Windows command line");
+    }
+    g_free(exe_w);
+    g_free(cmd_w);
+    g_string_free(ctx.log, TRUE);
+    return FALSE;
+  }
+
+  SECURITY_ATTRIBUTES sa = {0};
+  sa.nLength = sizeof(sa);
+  sa.bInheritHandle = TRUE;
+
+  HANDLE out_read = NULL;
+  HANDLE out_write = NULL;
+  if (!CreatePipe(&out_read, &out_write, &sa, 0)) {
+    if (out_err) {
+      *out_err = g_strdup("Failed to create pipe");
+    }
+    g_free(exe_w);
+    g_free(cmd_w);
+    g_string_free(ctx.log, TRUE);
+    return FALSE;
+  }
+  /* Parent read handle must not be inherited. */
+  SetHandleInformation(out_read, HANDLE_FLAG_INHERIT, 0);
+
+  HANDLE nul_in = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
+  STARTUPINFOW si = {0};
+  si.cb = sizeof(si);
+  si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+  si.wShowWindow = SW_HIDE;
+  si.hStdInput = (nul_in != INVALID_HANDLE_VALUE) ? nul_in : GetStdHandle(STD_INPUT_HANDLE);
+  si.hStdOutput = out_write;
+  si.hStdError = out_write;
+
+  PROCESS_INFORMATION pi = {0};
+  DWORD create_flags = CREATE_NO_WINDOW;
+  BOOL started = CreateProcessW((LPCWSTR)exe_w,
+                               (LPWSTR)cmd_w,
+                               NULL,
+                               NULL,
+                               TRUE,
+                               create_flags,
+                               NULL,
+                               NULL,
+                               &si,
+                               &pi);
+
+  CloseHandle(out_write);
+  if (nul_in != INVALID_HANDLE_VALUE) {
+    CloseHandle(nul_in);
+  }
+  g_free(exe_w);
+  g_free(cmd_w);
+
+  if (!started) {
+    DWORD e = GetLastError();
+    if (out_err) {
+      *out_err = g_strdup_printf("Failed to start esptool (CreateProcessW error %lu)", (unsigned long)e);
+    }
+    CloseHandle(out_read);
+    g_string_free(ctx.log, TRUE);
+    return FALSE;
+  }
+
+  char buf[4096];
+  DWORD nread = 0;
+  while (ReadFile(out_read, buf, (DWORD)sizeof(buf), &nread, NULL) && nread > 0) {
+    esptool_consume_text_chunk(&ctx, buf, (gsize)nread);
+  }
+  CloseHandle(out_read);
+
+  WaitForSingleObject(pi.hProcess, INFINITE);
+  DWORD exit_code = 0;
+  GetExitCodeProcess(pi.hProcess, &exit_code);
+  CloseHandle(pi.hThread);
+  CloseHandle(pi.hProcess);
+
+  if (exit_code != 0) {
+    if (out_err) {
+      const char *log_str = (ctx.log && ctx.log->len > 0) ? ctx.log->str : NULL;
+      if (log_str) {
+        *out_err = g_strdup_printf("esptool failed (%s). Output:\n%s", phase, log_str);
+      } else {
+        *out_err = g_strdup_printf("esptool failed (%s) (exit code %lu)", phase, (unsigned long)exit_code);
+      }
+    }
+    g_string_free(ctx.log, TRUE);
+    return FALSE;
+  }
+
+  g_string_free(ctx.log, TRUE);
+  post_progress(up, base + span, phase);
+  return TRUE;
+#else
+  /* Non-Windows: use GSubprocess. */
   GError *err = NULL;
   GSubprocessLauncher *launcher = g_subprocess_launcher_new(G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_MERGE);
   if (!launcher) {
     if (out_err) {
       *out_err = g_strdup("Failed to create subprocess launcher");
     }
+    g_string_free(ctx.log, TRUE);
     return FALSE;
   }
 
@@ -212,8 +524,7 @@ static gboolean run_esptool_step(FirmwareUpgrade *up,
       const char *exe_path = (argv && argv[0]) ? argv[0] : "";
       if (exe_path[0] != '\0' && g_file_test(exe_path, G_FILE_TEST_EXISTS)) {
         *out_err = g_strdup_printf(
-          "Failed to start esptool at '%s': %s\n\nThe file exists, but the OS could not execute it. "
-          "On Windows this often means a required runtime DLL is missing (e.g. Visual C++ runtime).",
+          "Failed to start esptool at '%s': %s\n\nThe file exists, but the OS could not execute it.",
           exe_path,
           err ? err->message : "unknown error");
       } else {
@@ -221,103 +532,15 @@ static gboolean run_esptool_step(FirmwareUpgrade *up,
       }
     }
     g_clear_error(&err);
+    g_string_free(ctx.log, TRUE);
     return FALSE;
   }
 
   GInputStream *stdout_stream = g_subprocess_get_stdout_pipe(proc);
-  GDataInputStream *dis = g_data_input_stream_new(stdout_stream);
-  g_data_input_stream_set_newline_type(dis, G_DATA_STREAM_NEWLINE_TYPE_ANY);
-
-  char *line = NULL;
-  gsize len = 0;
-  int last_pct = -1;
-  double last_frac = -1.0; /* 0..1 within this phase */
-  GString *log = g_string_new(NULL);
-
-  post_progress(up, base, phase);
-
-  while ((line = g_data_input_stream_read_line(dis, &len, NULL, &err)) != NULL) {
-    if (len > 0) {
-      if (log->len > 0) {
-        g_string_append_c(log, '\n');
-      }
-      /* Guard against unbounded growth; keep last few KB of output. */
-      if (log->len < 4096) {
-        g_string_append(log, line);
-      }
-    }
-
-    /* Prefer precise byte progress: "<read>/<total> bytes". */
-    gboolean matched_progress = FALSE;
-    if (up->bytes_re) {
-      GMatchInfo *mi = NULL;
-      if (g_regex_match(up->bytes_re, line, 0, &mi)) {
-        gchar *m_read = g_match_info_fetch(mi, 1);
-        gchar *m_total = g_match_info_fetch(mi, 2);
-        if (m_read && m_total) {
-          gdouble read_bytes = g_ascii_strtod(m_read, NULL);
-          gdouble total_bytes = g_ascii_strtod(m_total, NULL);
-          if (total_bytes > 0.0 && read_bytes >= 0.0) {
-            gdouble frac = read_bytes / total_bytes;
-            if (frac < 0.0) frac = 0.0;
-            if (frac > 1.0) frac = 1.0;
-            if (frac < last_frac) {
-              frac = last_frac;
-            }
-            if (frac > last_frac) {
-              last_frac = frac;
-              double f = base + span * frac;
-              char status[256];
-              g_snprintf(status, sizeof(status), "%s: %.1f%%", phase, frac * 100.0);
-              post_progress(up, f, status);
-            }
-            matched_progress = TRUE;
-          }
-        }
-        g_free(m_read);
-        g_free(m_total);
-      }
-      if (mi) {
-        g_match_info_free(mi);
-      }
-    }
-
-    /* Fallback: parse percentage like "(10 %)" or "10%" when byte info
-       is not available on this line. */
-    if (!matched_progress && up->pct_re) {
-      GMatchInfo *mi = NULL;
-      if (g_regex_match(up->pct_re, line, 0, &mi)) {
-        gchar *m = g_match_info_fetch(mi, 1);
-        if (m) {
-          int pct = atoi(m);
-          if (pct >= 0 && pct <= 100) {
-            if (pct < last_pct) {
-              pct = last_pct;
-            }
-            if (pct != last_pct) {
-              last_pct = pct;
-              double frac = (double)pct / 100.0;
-              if (frac < last_frac) {
-                frac = last_frac;
-              }
-              if (frac > last_frac) {
-                last_frac = frac;
-                double f = base + span * frac;
-                char status[256];
-                g_snprintf(status, sizeof(status), "%s: %d%%", phase, pct);
-                post_progress(up, f, status);
-              }
-            }
-          }
-          g_free(m);
-        }
-      }
-      if (mi) {
-        g_match_info_free(mi);
-      }
-    }
-
-    g_free(line);
+  char buf[4096];
+  gssize n = 0;
+  while ((n = g_input_stream_read(stdout_stream, buf, sizeof(buf), NULL, &err)) > 0) {
+    esptool_consume_text_chunk(&ctx, buf, (gsize)n);
   }
 
   if (err) {
@@ -325,18 +548,15 @@ static gboolean run_esptool_step(FirmwareUpgrade *up,
       *out_err = g_strdup_printf("I/O error while running esptool (%s): %s", phase, err->message);
     }
     g_clear_error(&err);
-    g_string_free(log, TRUE);
-    g_object_unref(dis);
+    g_string_free(ctx.log, TRUE);
     g_object_unref(proc);
     return FALSE;
   }
 
-  g_object_unref(dis);
-
   gboolean ok = g_subprocess_wait_check(proc, NULL, &err);
   if (!ok) {
     if (out_err) {
-      const char *log_str = (log && log->len > 0) ? log->str : NULL;
+      const char *log_str = (ctx.log && ctx.log->len > 0) ? ctx.log->str : NULL;
       if (log_str && err) {
         *out_err = g_strdup_printf("esptool failed (%s): %s. Output:\n%s", phase, err->message, log_str);
       } else if (log_str) {
@@ -348,16 +568,85 @@ static gboolean run_esptool_step(FirmwareUpgrade *up,
       }
     }
     g_clear_error(&err);
-    g_string_free(log, TRUE);
+    g_string_free(ctx.log, TRUE);
     g_object_unref(proc);
     return FALSE;
   }
 
-  g_string_free(log, TRUE);
+  g_string_free(ctx.log, TRUE);
   g_object_unref(proc);
-
   post_progress(up, base + span, phase);
   return TRUE;
+#endif
+}
+
+static gboolean err_suggests_invalid_choice(const char *err_msg) {
+  if (!err_msg) {
+    return FALSE;
+  }
+  /* esptool argparse message, e.g.:
+     "invalid choice: 'read-flash'" */
+  return (strstr(err_msg, "invalid choice") != NULL);
+}
+
+static gboolean run_esptool_step_with_fallback(FirmwareUpgrade *up,
+                                              char *const *argv,
+                                              int fallback_index,
+                                              const char *fallback_value,
+                                              const char *phase,
+                                              double base,
+                                              double span,
+                                              char **out_err) {
+  char *first_err = NULL;
+  gboolean ok = run_esptool_step(up, argv, phase, base, span, &first_err);
+  if (ok) {
+    if (out_err) {
+      *out_err = NULL;
+    }
+    g_free(first_err);
+    return TRUE;
+  }
+
+  if (fallback_index < 0 || !fallback_value || !err_suggests_invalid_choice(first_err)) {
+    if (out_err) {
+      *out_err = first_err;
+    } else {
+      g_free(first_err);
+    }
+    return FALSE;
+  }
+
+  /* Try again with alternate subcommand spelling (copy argv pointer array; don't mutate caller memory). */
+  int argc = 0;
+  while (argv[argc] != NULL) {
+    argc++;
+  }
+  char **argv2 = g_new0(char *, (gsize)argc + 1);
+  for (int i = 0; i < argc; i++) {
+    argv2[i] = (char *)argv[i];
+  }
+  argv2[fallback_index] = (char *)fallback_value;
+  argv2[argc] = NULL;
+
+  char *second_err = NULL;
+  ok = run_esptool_step(up, argv2, phase, base, span, &second_err);
+  g_free(argv2);
+
+  g_free(first_err);
+  if (ok) {
+    if (out_err) {
+      *out_err = NULL;
+    }
+    g_free(second_err);
+    return TRUE;
+  }
+
+  if (out_err) {
+    *out_err = second_err;
+  } else {
+    g_free(second_err);
+  }
+  return FALSE;
 }
 
 static char *make_backup_path(const char *spec_path) {
@@ -377,18 +666,25 @@ static gpointer firmware_thread_main(gpointer user_data) {
 
   char *esptool = find_esptool_program();
   if (!esptool) {
-    post_done(up, FALSE,
-              "Flashing tool not found. Expected 'esptool' bundled next to the application (recommended), or available in PATH on this machine.");
+    char *msg = build_esptool_not_found_message();
+    post_done(up, FALSE, msg);
+    g_free(msg);
     return NULL;
+  }
+
+  {
+    char *status = g_strdup_printf("Используется прошивальщик: %s", esptool);
+    post_progress(up, 0.0, status);
+    g_free(status);
   }
 
   /* Base argv: esptool --port PORT --chip esp32s3 */
   /* Use a higher baudrate to speed up flashing when possible. */
   const char *baud = "460800";
-    /* Backup size: read only the first 1MB of flash for backup.
-      This matches typical bootloader+app region and keeps backup time manageable
-      compared to reading ALL of a large flash chip. */
-    const char *backup_size = "1M";
+    /* Backup size: read only the first 1 MiB of flash for backup.
+      NOTE: esptool's positional "size" arg for read_flash expects bytes (or ALL),
+      while 1MB/2MB/... are accepted by --flash_size option. */
+    const char *backup_size = "0x100000";
 
   gboolean spec_args = spec_is_args_file(up->spec);
   gboolean spec_bin = path_ends_with_ci(up->spec, ".bin") || path_ends_with_ci(up->spec, ".hex");
@@ -419,7 +715,7 @@ static gpointer firmware_thread_main(gpointer user_data) {
       "esp32s3",
       "-b",
       (char *)baud,
-      "read-flash",
+      "read_flash",
       "0",
       (char *)backup_size,
       backup_path,
@@ -427,7 +723,14 @@ static gpointer firmware_thread_main(gpointer user_data) {
     };
 
     char *step_err = NULL;
-    if (!run_esptool_step(up, argv_backup, "Backup", 0.0, 0.25, &step_err)) {
+    if (!run_esptool_step_with_fallback(up,
+                                        argv_backup,
+                                        7, /* subcommand position */
+                                        "read-flash",
+                                        "Backup",
+                                        0.0,
+                                        0.25,
+                                        &step_err)) {
       /* Backup is required: abort flashing on failure. */
       char *msg = g_strdup_printf("Backup failed. %s", step_err ? step_err : "");
       g_free(step_err);
@@ -452,7 +755,7 @@ static gpointer firmware_thread_main(gpointer user_data) {
   g_ptr_array_add(argv, g_strdup("esp32s3"));
   g_ptr_array_add(argv, g_strdup("-b"));
   g_ptr_array_add(argv, g_strdup(baud));
-  g_ptr_array_add(argv, g_strdup("write-flash"));
+  g_ptr_array_add(argv, g_strdup("write_flash"));
 
   if (spec_args) {
     g_ptr_array_add(argv, g_strdup_printf("@%s", up->spec));
@@ -465,7 +768,14 @@ static gpointer firmware_thread_main(gpointer user_data) {
   g_ptr_array_add(argv, NULL);
 
   char *step_err = NULL;
-  gboolean ok = run_esptool_step(up, (char *const *)argv->pdata, "Flashing", 0.25, 0.75, &step_err);
+  gboolean ok = run_esptool_step_with_fallback(up,
+                                               (char *const *)argv->pdata,
+                                               7, /* subcommand position */
+                                               "write-flash",
+                                               "Flashing",
+                                               0.25,
+                                               0.75,
+                                               &step_err);
   g_ptr_array_free(argv, TRUE);
 
   if (!ok) {

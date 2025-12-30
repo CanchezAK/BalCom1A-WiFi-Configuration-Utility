@@ -508,7 +508,7 @@ FunctionEnd
       # Robustness rules:
       # - never delete a bundled/existing esptool.exe on failures
       # - download into $PLUGINSDIR first, then copy into $INSTDIR only on success
-      # Uses NSISdl (bundled with NSIS). HTTPS is supported via WinINet.
+      # Uses PowerShell (Invoke-WebRequest) for better redirect/proxy handling.
       string(JOIN "\n" CPACK_NSIS_EXTRA_INSTALL_COMMANDS
         "        ; --- BalCom: ensure esptool.exe is present ---"
         "        StrCpy $R9 \"$INSTDIR\\esptool.exe\""
@@ -517,13 +517,19 @@ FunctionEnd
         "        BalCom_Esptool_Need:"
         "          DetailPrint \"Downloading esptool.exe ...\""
         "          Delete \"$R8\""
-        "          NSISdl::download /TIMEOUT=30000 \"${BALCOM_FLASH_TOOL_DOWNLOAD_URL}\" \"$R8\""
+        "          nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -Command \"$ErrorActionPreference=\\\"Stop\\\"; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri ''${BALCOM_FLASH_TOOL_DOWNLOAD_URL}'' -OutFile ''$R8''\"'"
         "          Pop $0"
-        "          StrCmp $0 \"success\" 0 BalCom_Esptool_DownloadFailed"
+        "          StrCmp $0 \"0\" 0 BalCom_Esptool_DownloadFailed"
+        "          IfFileExists \"$R8\" 0 BalCom_Esptool_DownloadFailed"
         "          CopyFiles /SILENT \"$R8\" \"$R9\""
+        "          IfFileExists \"$R9\" 0 BalCom_Esptool_CopyFailed"
+        "          nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -Command \"try { Unblock-File -LiteralPath ''$R9'' } catch { }\"'"
         "          Goto BalCom_Esptool_Verify"
         "        BalCom_Esptool_DownloadFailed:"
-        "          MessageBox MB_ICONEXCLAMATION \"Failed to download esptool.exe ($0).\\r\\n\\r\\nInstallation will continue, but Firmware Upgrade may not work until you place esptool.exe into:\\r\\n$INSTDIR\""
+        "          MessageBox MB_ICONEXCLAMATION \"Failed to download esptool.exe (exit code: $0).\\r\\n\\r\\nInstallation will continue, but Firmware Upgrade may not work until you place esptool.exe into:\\r\\n$INSTDIR\""
+        "          Goto BalCom_Esptool_Done"
+        "        BalCom_Esptool_CopyFailed:"
+        "          MessageBox MB_ICONEXCLAMATION \"Downloaded esptool.exe but could not place it into the installation folder.\\r\\n\\r\\nInstallation will continue, but Firmware Upgrade may not work until you place esptool.exe into:\\r\\n$INSTDIR\""
         "          Goto BalCom_Esptool_Done"
         "        BalCom_Esptool_Have:"
         "          ; esptool.exe already present (bundled or from a previous install)."

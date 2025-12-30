@@ -136,7 +136,11 @@ jobs:
           cmake --preset win-release-installer \
             -DMSYS2_MINGW64_PREFIX="${_runner_tmp_win}/msys64/mingw64" \
             -DCPACK_TEMPORARY_DIRECTORY="${_runner_tmp_win}/cpack-tmp" \
-            -DBALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL=OFF
+            -DBALCOM_INSTALLER_DOWNLOAD_FLASH_TOOL=ON \
+            -DBALCOM_FLASH_TOOL_DOWNLOAD_URL="${BALCOM_FLASH_TOOL_DOWNLOAD_URL}" \
+            -DBALCOM_FLASH_TOOL_SHA256="${BALCOM_FLASH_TOOL_SHA256:-}" \
+            -DBALCOM_BUNDLE_FLASH_TOOL=OFF \
+            -DBALCOM_FLASH_TOOL_EXECUTABLE=
 
       - name: Build installer
         shell: msys2 {0}
@@ -192,10 +196,13 @@ jobs:
           $stage = $exe.DirectoryName
           Write-Host "Staged install dir: $stage"
 
+          # If the installer is configured to download esptool.exe during installation,
+          # it is OK for esptool.exe to be absent from the staged install tree.
+          $downloadEnabled = -not [string]::IsNullOrWhiteSpace($env:BALCOM_FLASH_TOOL_DOWNLOAD_URL)
+
           $requiredFiles = @(
             (Join-Path -Path $stage -ChildPath "BalCom1A Configuration Utility.exe"),
             (Join-Path -Path $stage -ChildPath "glade.ui"),
-            (Join-Path -Path $stage -ChildPath "esptool.exe"),
             (Join-Path -Path $stage -ChildPath "libgtk-4-1.dll"),
             (Join-Path -Path $stage -ChildPath "libglib-2.0-0.dll"),
             (Join-Path -Path $stage -ChildPath "share/glib-2.0/schemas/gschemas.compiled")
@@ -204,6 +211,15 @@ jobs:
           foreach ($p in $requiredFiles) {
             if (-not (Test-Path -LiteralPath $p)) {
               throw "Missing required bundled file in installer stage: $p"
+            }
+          }
+
+          $esptoolPath = Join-Path -Path $stage -ChildPath "esptool.exe"
+          if (-not (Test-Path -LiteralPath $esptoolPath)) {
+            if ($downloadEnabled) {
+              Write-Host "Note: esptool.exe is not staged (expected to be downloaded at install time)."
+            } else {
+              throw "Missing required bundled file in installer stage: $esptoolPath"
             }
           }
 
