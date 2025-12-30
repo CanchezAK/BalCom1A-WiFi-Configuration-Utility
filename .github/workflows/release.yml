@@ -109,7 +109,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           $roots = @(
-            "build/win-release-installer/_CPack_Packages",
+            "build/win-release-installer-actions/_CPack_Packages",
             (Join-Path -Path $env:RUNNER_TEMP -ChildPath "cpack-tmp")
           )
           foreach ($r in $roots) {
@@ -130,7 +130,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
 
           $stageRoots = @(
-            "build/win-release-installer/_CPack_Packages",
+            "build/win-release-installer-actions/_CPack_Packages",
             (Join-Path -Path $env:RUNNER_TEMP -ChildPath "cpack-tmp")
           )
 
@@ -197,9 +197,9 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          # CPack should place the NSIS installer under CPACK_PACKAGE_DIRECTORY (build/win-release-installer),
+          # CPack should place the NSIS installer under CPACK_PACKAGE_DIRECTORY (build/win-release-installer-actions),
           # but to be robust we search recursively (some CPack/NSIS layouts put it under _CPack_Packages).
-          $candidates = Get-ChildItem -Path "build/win-release-installer" -Recurse -File -Filter "BalCom1A Configuration Utility-*.exe"
+          $candidates = Get-ChildItem -Path "build/win-release-installer-actions" -Recurse -File -Filter "BalCom1A Configuration Utility-*.exe"
 
           $candidates |
             Select-Object FullName, Length, LastWriteTime |
@@ -207,11 +207,11 @@ jobs:
             Format-Table -AutoSize
 
           if (-not $candidates) {
-            Write-Host "Listing top-level build/win-release-installer/*.exe for debugging:"
-            Get-ChildItem -Path "build/win-release-installer" -File -Filter "*.exe" |
+            Write-Host "Listing top-level build/win-release-installer-actions/*.exe for debugging:"
+            Get-ChildItem -Path "build/win-release-installer-actions" -File -Filter "*.exe" |
               Select-Object FullName, Length, LastWriteTime |
               Format-Table -AutoSize
-            throw "Installer not found under build/win-release-installer (recursive search)"
+            throw "Installer not found under build/win-release-installer-actions (recursive search)"
           }
 
           # Pick the newest candidate and copy it to a single, stable path for release upload.
