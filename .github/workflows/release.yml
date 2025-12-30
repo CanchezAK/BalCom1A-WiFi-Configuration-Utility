@@ -266,7 +266,8 @@ jobs:
           $installer = $candidates | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           $releaseDir = "build/release-assets"
           New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
-          $releasePath = Join-Path -Path $releaseDir -ChildPath $installer.Name
+          # IMPORTANT: action-gh-release is more reliable with forward-slash paths.
+          $releasePath = "$releaseDir/$($installer.Name)"
           Copy-Item -LiteralPath $installer.FullName -Destination $releasePath -Force
           Write-Host "Release installer: $releasePath"
           "installer_path=$releasePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
@@ -277,6 +278,7 @@ jobs:
           files: |
             ${{ steps.locate_installer.outputs.installer_path }}
             build/esptool-asset/esptool.exe
+          fail_on_unmatched_files: true
           generate_release_notes: true
 
   build-linux-deb:
