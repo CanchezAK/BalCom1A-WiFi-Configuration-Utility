@@ -20,13 +20,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: packaging/flasher/requirements-ci.txt
+          ref: ${{ github.ref }}
 
       - name: Set up MSYS2 (MinGW64)
         uses: msys2/setup-msys2@v2
@@ -52,45 +46,16 @@ jobs:
           choco install nsis -y
           & "C:\Program Files (x86)\NSIS\makensis.exe" /VERSION
 
-      - name: Build standalone esptool (PyInstaller)
+      - name: Prepare bundled esptool.exe (from repo)
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r packaging\flasher\requirements-ci.txt
+          $src = "packaging\flasher\esptool.exe"
+          if (-not (Test-Path -LiteralPath $src)) {
+            throw "Expected $src to exist in the repo at the tagged revision ($env:GITHUB_REF)"
+          }
 
           New-Item -ItemType Directory -Force -Path build\esptool-asset | Out-Null
-
-          python -m PyInstaller packaging\flasher\esptool_wrapper.py `
-            --onefile `
-            --name esptool `
-            --distpath build\esptool-asset `
-            --workpath build\esptool-asset\_pyi_build `
-            --specpath build\esptool-asset\_pyi_spec
-
-          if (-not (Test-Path build\esptool-asset\esptool.exe)) {
-            throw "Expected build/esptool-asset/esptool.exe to be created"
-          }
-
-          # Make the built esptool.exe available both to CMake (for bundling
-          # into the installer) and as a standalone GitHub Release asset.
-          New-Item -ItemType Directory -Force -Path packaging\flasher | Out-Null
-          Copy-Item build\esptool-asset\esptool.exe packaging\flasher\esptool.exe -Force
-
-          # Collect MSVC runtime DLLs that PyInstaller-built executables may require.
-          # This helps esptool.exe run on clean machines without VC++ Redistributable.
-          $pythonExe = (Get-Command python).Source
-          $pythonRoot = Split-Path -Parent $pythonExe
-          $vcDlls = @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")
-          foreach ($dll in $vcDlls) {
-            $src = Join-Path -Path $pythonRoot -ChildPath $dll
-            if (Test-Path -LiteralPath $src) {
-              Copy-Item -LiteralPath $src -Destination (Join-Path -Path "build\esptool-asset" -ChildPath $dll) -Force
-              Copy-Item -LiteralPath $src -Destination (Join-Path -Path "packaging\flasher" -ChildPath $dll) -Force
-              Write-Host "Bundling VC runtime DLL for esptool: $dll"
-            } else {
-              Write-Host "VC runtime DLL not found next to python.exe: $src (skipping)"
-            }
-          }
+          Copy-Item -LiteralPath $src -Destination build\esptool-asset\esptool.exe -Force
 
           $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath build\esptool-asset\esptool.exe).Hash.ToLower()
           "BALCOM_FLASH_TOOL_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
