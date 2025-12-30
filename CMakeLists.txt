@@ -617,6 +617,51 @@ if (UNIX AND NOT APPLE)
   # Let dpkg-shlibdeps compute dependencies from linked libs (recommended).
   set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 
+  # Optional: download official esptool (tar.gz) at install time via DEB postinst.
+  # Rationale:
+  # - keep the .deb smaller
+  # - avoid bundling a third-party binary in the package payload
+  # - allow offline installs to succeed (esptool will simply be absent)
+  option(BALCOM_DEB_DOWNLOAD_FLASH_TOOL "(Linux/DEB) Download esptool (.tar.gz) during installation" OFF)
+  set(BALCOM_DEB_FLASH_TOOL_DOWNLOAD_URL "" CACHE STRING "(Linux/DEB) URL to download esptool tar.gz from")
+  set(BALCOM_DEB_FLASH_TOOL_SHA256 "" CACHE STRING "(Linux/DEB) Expected SHA256 of downloaded esptool (hex, optional; if empty, skip verification)")
+
+  if (BALCOM_DEB_DOWNLOAD_FLASH_TOOL)
+    if (BALCOM_DEB_FLASH_TOOL_DOWNLOAD_URL STREQUAL "")
+      message(FATAL_ERROR "BALCOM_DEB_DOWNLOAD_FLASH_TOOL is ON, but BALCOM_DEB_FLASH_TOOL_DOWNLOAD_URL is empty")
+    endif()
+
+    # Add minimal runtime deps needed by postinst to download/verify/extract.
+    # Note: with CPACK_DEBIAN_PACKAGE_SHLIBDEPS=ON, CPack will append shlib deps.
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "ca-certificates, curl | wget")
+
+    # Generate a DEB postinst script that downloads and installs esptool into
+    # /usr/share/balcom1a-configuration-utility/esptool if it's missing.
+    set(_balcom_deb_postinst_in "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/debian/postinst.in")
+    set(_balcom_deb_postinst_out "${CMAKE_CURRENT_BINARY_DIR}/postinst")
+    if (EXISTS "${_balcom_deb_postinst_in}")
+      configure_file("${_balcom_deb_postinst_in}" "${_balcom_deb_postinst_out}" @ONLY)
+      # Ensure executable permissions in the package control tarball.
+      file(CHMOD "${_balcom_deb_postinst_out}"
+        PERMISSIONS
+          OWNER_READ OWNER_WRITE OWNER_EXECUTE
+          GROUP_READ GROUP_EXECUTE
+          WORLD_READ WORLD_EXECUTE
+      )
+      set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${_balcom_deb_postinst_out}")
+    else()
+      message(FATAL_ERROR "DEB postinst template not found: ${_balcom_deb_postinst_in}")
+    endif()
+
+    # Even if we download esptool at install time, still ship third-party notices.
+    if (EXISTS "${BALCOM_FLASH_TOOL_NOTICES}")
+      install(FILES "${BALCOM_FLASH_TOOL_NOTICES}"
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/balcom1a-configuration-utility
+        RENAME THIRD_PARTY_NOTICES.txt
+      )
+    endif()
+  endif()
+
   option(BALCOM_ENABLE_DEB "Enable DEB package target (make_deb)" ON)
   if (BALCOM_ENABLE_DEB)
     add_custom_target(make_deb

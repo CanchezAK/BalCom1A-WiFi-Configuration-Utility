@@ -117,6 +117,23 @@
     },
 
     {
+      "name": "linux-release-deb-actions",
+      "displayName": "Linux (Actions-like) - Release (DEB + download esptool)",
+      "inherits": "linux-release",
+      "cacheVariables": {
+        "CMAKE_INSTALL_PREFIX": "/usr",
+        "BALCOM_ENABLE_DEB": "ON",
+
+        "BALCOM_BUNDLE_FLASH_TOOL": "OFF",
+        "BALCOM_FLASH_TOOL_EXECUTABLE": "",
+
+        "BALCOM_DEB_DOWNLOAD_FLASH_TOOL": "ON",
+        "BALCOM_DEB_FLASH_TOOL_DOWNLOAD_URL": "https://github.com/espressif/esptool/releases/download/v5.1.0/esptool-v5.1.0-linux-amd64.tar.gz",
+        "BALCOM_DEB_FLASH_TOOL_SHA256": ""
+      }
+    },
+
+    {
       "name": "linux-release-deb-ci",
       "inherits": "linux-release-deb",
       "cacheVariables": {
@@ -182,6 +199,14 @@
       ]
     }
     ,
+    {
+      "name": "linux-deb-actions",
+      "displayName": "Linux (Actions-like) - Make DEB (CPack)",
+      "configurePreset": "linux-release-deb-actions",
+      "targets": [
+        "make_deb"
+      ]
+    },
     {
       "name": "linux-deb-ci",
       "displayName": "Linux (CI) - Make DEB (CPack)",

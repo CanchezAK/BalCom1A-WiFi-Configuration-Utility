@@ -1,0 +1,127 @@
+#!/bin/sh
+set -eu
+
+# BalCom1A DEB postinst: ensure official esptool binary is present.
+#
+# Design goals:
+# - Best-effort only: do not fail package installation if download/extraction fails.
+# - Idempotent: if esptool already exists and is executable, do nothing.
+# - Minimal assumptions about the archive layout.
+
+URL="@BALCOM_DEB_FLASH_TOOL_DOWNLOAD_URL@"
+EXPECTED_SHA256="@BALCOM_DEB_FLASH_TOOL_SHA256@"
+
+APP_DATADIR="/usr/share/balcom1a-configuration-utility"
+DEST="$APP_DATADIR/esptool"
+
+log() {
+  # Avoid noisy dpkg output; keep it minimal.
+  printf '%s\n' "$*" >&2
+}
+
+have_esptool() {
+  [ -x "$DEST" ]
+}
+
+download_to() {
+  out="$1"
+
+  if command -v curl >/dev/null 2>&1; then
+    # -L: follow redirects (GitHub)
+    # --fail: non-zero on HTTP errors
+    # --silent/--show-error: quiet but errors visible
+    curl -L --fail --silent --show-error -A "BalCom1A-DEB" -o "$out" "$URL" || return 1
+    return 0
+  fi
+
+  if command -v wget >/dev/null 2>&1; then
+    wget -q -O "$out" "$URL" || return 1
+    return 0
+  fi
+
+  return 1
+}
+
+verify_sha256() {
+  file="$1"
+
+  if [ -z "$EXPECTED_SHA256" ] || [ "$EXPECTED_SHA256" = "@BALCOM_DEB_FLASH_TOOL_SHA256@" ]; then
+    return 0
+  fi
+
+  if ! command -v sha256sum >/dev/null 2>&1; then
+    log "b1a-config: sha256sum not available; skipping esptool verification"
+    return 0
+  fi
+
+  actual="$(sha256sum "$file" | awk '{print $1}')"
+  if [ "${actual}" != "${EXPECTED_SHA256}" ]; then
+    log "b1a-config: esptool SHA256 mismatch; skipping install"
+    return 1
+  fi
+
+  return 0
+}
+
+install_esptool_from_dir() {
+  root="$1"
+
+  # Known layout for v5.1.0 linux-amd64 release:
+  #   esptool-linux-amd64/esptool
+  if [ -f "$root/esptool-linux-amd64/esptool" ]; then
+    src="$root/esptool-linux-amd64/esptool"
+  else
+    # Fallback: try to locate an 'esptool' file in the first two levels.
+    src="$(find "$root" -maxdepth 2 -type f -name esptool 2>/dev/null | head -n 1 || true)"
+  fi
+
+  if [ -z "$src" ] || [ ! -f "$src" ]; then
+    return 1
+  fi
+
+  install -d -m 0755 "$APP_DATADIR" || return 1
+  install -m 0755 "$src" "$DEST" || return 1
+  return 0
+}
+
+# postinst is called with args; we don't need special branching.
+# Keep behavior the same for configure/abort-* cases.
+if have_esptool; then
+  exit 0
+fi
+
+if [ -z "$URL" ] || [ "$URL" = "@BALCOM_DEB_FLASH_TOOL_DOWNLOAD_URL@" ]; then
+  # Misconfigured build; do nothing.
+  exit 0
+fi
+
+tmpdir="$(mktemp -d 2>/dev/null || true)"
+if [ -z "$tmpdir" ] || [ ! -d "$tmpdir" ]; then
+  exit 0
+fi
+
+cleanup() {
+  rm -rf "$tmpdir" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+archive="$tmpdir/esptool.tar.gz"
+
+if ! download_to "$archive"; then
+  # Offline / GitHub blocked / no downloader installed.
+  exit 0
+fi
+
+if ! verify_sha256 "$archive"; then
+  exit 0
+fi
+
+if ! tar -xzf "$archive" -C "$tmpdir"; then
+  exit 0
+fi
+
+if ! install_esptool_from_dir "$tmpdir"; then
+  exit 0
+fi
+
+exit 0

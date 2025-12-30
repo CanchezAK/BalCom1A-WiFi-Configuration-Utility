@@ -243,13 +243,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: packaging/flasher/requirements-ci.txt
-
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -258,38 +251,22 @@ jobs:
             libgtk-4-dev \
             fakeroot dpkg-dev
 
-      - name: Build standalone esptool (PyInstaller)
+      - name: Configure (Actions-like DEB preset)
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r packaging/flasher/requirements-ci.txt
-
-          mkdir -p build/flasher
-
-          python -m PyInstaller packaging/flasher/esptool_wrapper.py \
-            --onefile \
-            --name esptool \
-            --distpath build/flasher \
-            --workpath build/flasher/_pyi_build \
-            --specpath build/flasher/_pyi_spec
-
-          test -f build/flasher/esptool
-
-      - name: Configure (DEB preset)
-        run: |
-          cmake --preset linux-release-deb-ci
+          cmake --preset linux-release-deb-actions
 
       - name: Build DEB
         run: |
-          cmake --build --preset linux-deb-ci
+          cmake --build --preset linux-deb-actions
 
       - name: Locate DEB
         run: |
-          ls -la build/linux-release-deb-ci || true
-          find build/linux-release-deb-ci -maxdepth 1 -type f -name "*.deb" -print -ls
+          ls -la build/linux-release-deb-actions || true
+          find build/linux-release-deb-actions -maxdepth 1 -type f -name "*.deb" -print -ls
 
       - name: Upload .deb to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/linux-release-deb-ci/*.deb
+            build/linux-release-deb-actions/*.deb
           fail_on_unmatched_files: true
